@@ -1,0 +1,17 @@
+.env
+.venv
+
+# Datalytics inputs
+datalitycs-inputs/data
+
+# Datalytics database
+datalitycs-database
+
+# Datalytics storage
+datalitycs-storage
+
+# Datalytics airflow
+datalitycs-airflow/logs
+datalitycs-airflow/plugings/
+.venv/
+**/__pycache__/
