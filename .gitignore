@@ -5,7 +5,7 @@
 datalitycs-inputs/data
 
 # Datalytics database
-datalitycs-database
+datalitycs-database/*.duckdb
 
 # Datalytics storage
 datalitycs-storage

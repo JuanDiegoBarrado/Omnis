@@ -21,9 +21,9 @@ x-airflow-common:
       MINIO_BUCKET_TEST: "${MINIO_BUCKET_TEST}"
       MINIO_BUCKET_PREP: "${MINIO_BUCKET_PREP}"
       MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
-      DUCKDB_TEST: "${DUCKDB_TEST}"
-      DUCKDB_PREP: "${DUCKDB_PREP}"
-      DUCKDB_PROD: "${DUCKDB_PROD}"
+      DUCKDB_TEST: "/opt/airflow/database/${DUCKDB_TEST}"
+      DUCKDB_PREP: "/opt/airflow/database/${DUCKDB_PREP}"
+      DUCKDB_PROD: "/opt/airflow/database/${DUCKDB_PROD}"
     volumes:
       - ./datalitycs-airflow/dags:/opt/airflow/dags
       - ./datalitycs-airflow/logs:/opt/airflow/logs
@@ -39,6 +39,25 @@ x-airflow-common:
         condition: service_healthy
 
 services:
+
+  datalitycs-database-init:
+    image: python:3.12-slim  # base ligera con Python
+    container_name: datalitycs-database-init
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
+      MINIO_BUCKET_TEST: "${MINIO_BUCKET_TEST}"
+      MINIO_BUCKET_PREP: "${MINIO_BUCKET_PREP}"
+      MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
+    volumes:
+      - ./datalitycs-database:/database  # tu carpeta local con scripts SQL / DuckDB
+    command: pip install duckdb && python ./database/scripts/start_db.py
+    restart: "no"
+    depends_on:
+      datalitycs-storage:
+        condition: service_healthy
+
   datalitycs-storage:
     image: quay.io/minio/minio:latest
     container_name: minio
