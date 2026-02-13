@@ -1,7 +1,7 @@
 import duckdb
 import os
 
-SQL_FILE = 'db_config.sql'
+SQL_FILE = './database/init/db_config.sql'
 DATABASES = [('prod', os.getenv('DUCKDB_PROD')), ('prep', os.getenv('DUCKDB_PREP')), ('test', os.getenv('DUCKDB_TEST'))]
 with open(SQL_FILE, 'r', encoding='utf-8') as f:
     init_querys = f.read()

@@ -37,6 +37,8 @@ x-airflow-common:
         condition: service_healthy
       datalitycs-storage:
         condition: service_healthy
+      datalitycs-databse-init:
+        condition: service_completed_successfully
 
 services:
 
@@ -52,7 +54,7 @@ services:
       MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
     volumes:
       - ./datalitycs-database:/database  # tu carpeta local con scripts SQL / DuckDB
-    command: pip install duckdb && python ./database/scripts/start_db.py
+    command: sh -c "pip install duckdb && python ./database/scripts/start_db.py"
     restart: "no"
     depends_on:
       datalitycs-storage:
