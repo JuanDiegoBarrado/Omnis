@@ -8,7 +8,8 @@ datalitycs-inputs/data
 datalitycs-database/*.duckdb
 
 # Datalytics storage
-datalitycs-storage
+datalitycs-storage/*
+!datalitycs-storage/readme.txt
 
 # Datalytics airflow
 datalitycs-airflow/logs
