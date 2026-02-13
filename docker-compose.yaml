@@ -37,7 +37,7 @@ x-airflow-common:
         condition: service_healthy
       datalitycs-storage:
         condition: service_healthy
-      datalitycs-databse-init:
+      datalitycs-database-init:
         condition: service_completed_successfully
 
 services:
