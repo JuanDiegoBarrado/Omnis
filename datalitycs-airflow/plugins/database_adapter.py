@@ -1,17 +1,18 @@
 import duckdb
+import os
 from duckdb import DuckDBPyConnection
 
 def connect(database) -> DuckDBPyConnection:
     conn = duckdb.connect(database)
     
     conn.execute(
-    """ INSTALL httpfs;
+    f""" INSTALL httpfs;
         LOAD httpfs;
 
-        SET s3_endpoint='datalitycs-storage:9000';
+        SET s3_endpoint='{os.getenv('MINIO_ENDPOINT')}';
         SET s3_url_style='path';
-        SET s3_access_key_id='admin';
-        SET s3_secret_access_key='secret123';
+        SET s3_access_key_id='{os.getenv('MINIO_ROOT_USER')}';
+        SET s3_secret_access_key='{os.getenv('MINIO_ROOT_PASSWORD')}';
         SET s3_use_ssl=false;
     """
     )
