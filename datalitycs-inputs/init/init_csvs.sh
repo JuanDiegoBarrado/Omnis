@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-BASE_DIR="datalitycs-inputs/data2"
+BASE_DIR="datalitycs-inputs/data"
 
 mkdir -p "$BASE_DIR"
 
