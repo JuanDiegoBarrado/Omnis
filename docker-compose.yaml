@@ -109,7 +109,20 @@ services:
     depends_on:
       datalitycs-storage:
         condition: service_healthy
+      datalitycs-inputs-init:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  datalitycs-inputs-init:
+    build: ./datalitycs-inputs
+    container_name: streamlit
+    ports:
+      - "${STREAMLIT_INPUTS_WEB_PORT:-8501}:8501"
+    volumes:
+      - ./datalitycs-inputs:/datalitycs-inputs
+      - ./datalitycs-database:/database
+    command: ["/bin/sh", "./datalitycs-inputs/init/init_csvs.sh"]
+    restart: no
 
   airflow-postgres:
     image: postgres:16
