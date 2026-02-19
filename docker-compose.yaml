@@ -84,6 +84,7 @@ services:
 
   datalitycs-storage-init:
     image: quay.io/minio/mc:latest
+    container_name: datalitycs-storage-init
     depends_on:
       datalitycs-storage:
         condition: service_healthy
@@ -115,7 +116,7 @@ services:
 
   datalitycs-inputs-init:
     build: ./datalitycs-inputs
-    container_name: streamlit
+    container_name: streamlit-init
     ports:
       - "${STREAMLIT_INPUTS_WEB_PORT:-8501}:8501"
     volumes:
