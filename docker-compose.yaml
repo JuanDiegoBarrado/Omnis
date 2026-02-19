@@ -57,12 +57,12 @@ services:
     command: sh -c "pip install duckdb && python ./database/scripts/start_db.py"
     restart: "no"
     depends_on:
-      datalitycs-storage:
-        condition: service_healthy
+      datalitycs-storage-init:
+        condition: service_completed_successfully
 
   datalitycs-storage:
     image: quay.io/minio/minio:latest
-    container_name: minio
+    container_name: datalitycs-storage
     command: server /data --console-address ":9001"
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
@@ -74,11 +74,18 @@ services:
       - ./datalitycs-storage:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
+
+  datalitycs-storage-init:
+    image: quay.io/minio/mc:latest
+    depends_on:
+      datalitycs-storage:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "./datalitycs-storage/init/minio_init.sh"]
+    restart: no
 
   datalitycs-inputs:
     build: ./datalitycs-inputs

@@ -9,6 +9,8 @@ datalitycs-database/*.duckdb
 
 # Datalytics storage
 datalitycs-storage/*
+!datalitycs-storage/init
+!datalitycs-storage/scripts
 !datalitycs-storage/readme.txt
 
 # Datalytics airflow
