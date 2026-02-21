@@ -6,7 +6,7 @@ x-airflow-common:
     environment:
       &airflow-common-env
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__WEBSERVER__BASE_URL: "http://192.168.1.188:${AIRFLOW_WEB_PORT:-8080}"
+      AIRFLOW__WEBSERVER__BASE_URL: "http://${HOST_DEVICE_IP}:${AIRFLOW_WEB_PORT:-8080}"
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ''
