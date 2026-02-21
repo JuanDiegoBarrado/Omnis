@@ -7,7 +7,7 @@ from tasks.health.health_pre_tasks import *
 from general_utilities import build_dependencies
 
 @dag(
-    schedule=None,
+    schedule="0 23 * * *",
     start_date=None,
     catchup=False,
     tags=["test"],
