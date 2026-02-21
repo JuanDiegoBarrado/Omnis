@@ -36,8 +36,8 @@ x-airflow-common:
       &airflow-common-depends-on
       airflow-postgres:
         condition: service_healthy
-      datalitycs-storage:
-        condition: service_healthy
+      datalitycs-storage-init:
+        condition: service_completed_successfully
       datalitycs-database-init:
         condition: service_completed_successfully
 
@@ -93,13 +93,20 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-secret123}
     volumes:
-      - ./datalitycs-storage:/storage  # tu carpeta local con scripts SQL / DuckDB
+      - ./datalitycs-storage:/storage
     entrypoint: ["/bin/sh", "./storage/init/minio_init.sh"]
     restart: no
 
   datalitycs-inputs:
     build: ./datalitycs-inputs
     container_name: streamlit
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
+      MINIO_BUCKET_TEST: "${MINIO_BUCKET_TEST}"
+      MINIO_BUCKET_PREP: "${MINIO_BUCKET_PREP}"
+      MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
     ports:
       - "${STREAMLIT_INPUTS_WEB_PORT:-8501}:8501"
     volumes:
@@ -111,6 +118,8 @@ services:
     depends_on:
       datalitycs-storage:
         condition: service_healthy
+      datalitycs-storage-init:
+        condition: service_completed_successfully
       datalitycs-inputs-init:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -118,8 +127,6 @@ services:
   datalitycs-inputs-init:
     image: alpine:latest
     container_name: streamlit-init
-    ports:
-      - "${STREAMLIT_INPUTS_WEB_PORT:-8501}:8501"
     volumes:
       - ./datalitycs-inputs:/datalitycs-inputs
       - ./datalitycs-database:/database

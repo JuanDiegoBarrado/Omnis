@@ -8,15 +8,15 @@ import time
 
 ##### PREAMBLE ######
 # MinIO client creation
-MINIO_BUCKETS = ["files-test", "files-prep", "files-prod"]
+MINIO_BUCKETS = [os.getenv("MINIO_BUCKET_TEST"), os.getenv("MINIO_BUCKET_PREP"), os.getenv("MINIO_BUCKET_PROD")]
 MINIO_RAW_FILES_DIR = 'raw/new'
 
 s3 = boto3.client(
     "s3",
-    endpoint_url="http://datalitycs-storage:9000",
-    aws_access_key_id="admin",
-    aws_secret_access_key="secret123",
-    region_name="us-east-1",  # MinIO no valida región, pero boto3 lo requiere
+    endpoint_url=f"http://{os.getenv('MINIO_ENDPOINT')}",
+    aws_access_key_id=os.getenv("MINIO_ROOT_USER"),
+    aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD"),
+    region_name="us-east-1",
 )
 
 for bucket in MINIO_BUCKETS:    
