@@ -1,8 +1,8 @@
-version: "3.9"
-
 x-airflow-common:
     &airflow-common
-    build: ./datalitycs-airflow
+    build: ./omnis-airflow
+    env_file:
+      - .env
     environment:
       &airflow-common-env
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -16,130 +16,69 @@ x-airflow-common:
       AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
       _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
       AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
-      MINIO_BUCKET_TEST: "${MINIO_BUCKET_TEST}"
-      MINIO_BUCKET_PREP: "${MINIO_BUCKET_PREP}"
-      MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
-      DUCKDB_TEST: "/opt/airflow/database/${DUCKDB_TEST}"
-      DUCKDB_PREP: "/opt/airflow/database/${DUCKDB_PREP}"
-      DUCKDB_PROD: "/opt/airflow/database/${DUCKDB_PROD}"
     volumes:
-      - ./datalitycs-airflow/dags:/opt/airflow/dags
-      - ./datalitycs-airflow/logs:/opt/airflow/logs
-      - ./datalitycs-airflow/config:/opt/airflow/config
-      - ./datalitycs-airflow/plugins:/opt/airflow/plugins
-      - ./datalitycs-database:/opt/airflow/database
+      - ./omnis-airflow/dags:/opt/airflow/dags
+      - ./omnis-airflow/logs:/opt/airflow/logs
+      - ./omnis-airflow/config:/opt/airflow/config
+      - ./omnis-airflow/plugins:/opt/airflow/plugins
     user: "${AIRFLOW_UID:-50000}:0"
     depends_on:
       &airflow-common-depends-on
       airflow-postgres:
         condition: service_healthy
-      datalitycs-storage-init:
-        condition: service_completed_successfully
-      datalitycs-database-init:
+      omnis-storage-init:
         condition: service_completed_successfully
 
 services:
-
-  datalitycs-database-init:
-    image: python:3.12-slim  # base ligera con Python
-    container_name: datalitycs-database-init
-    environment:
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
-      MINIO_BUCKET_TEST: "${MINIO_BUCKET_TEST}"
-      MINIO_BUCKET_PREP: "${MINIO_BUCKET_PREP}"
-      MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
-      DUCKDB_TEST: "${DUCKDB_TEST}"
-      DUCKDB_PREP: "${DUCKDB_PREP}"
-      DUCKDB_PROD: "${DUCKDB_PROD}"
-    volumes:
-      - ./datalitycs-database:/database  # tu carpeta local con scripts SQL / DuckDB
-    command: sh -c "pip install duckdb && python ./database/scripts/start_db.py"
-    restart: "no"
-    depends_on:
-      datalitycs-storage-init:
-        condition: service_completed_successfully
-
-  datalitycs-storage:
-    image: quay.io/minio/minio:latest
-    container_name: datalitycs-storage
-    command: server /data --console-address ":9001"
+  omnis-database:
+    image: postgres:16
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_WEB_UI_PORT:-9001}:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-secret123}
+      - "${POSTGRES_PORT:-5432}:5432"
+    env_file:
+      - .env
     volumes:
-      - ./datalitycs-storage/minio_storage:/data
+      - ./omnis-database/data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-default_user}"]
+      interval: 30m
       retries: 5
       start_period: 10s
     restart: unless-stopped
 
-  datalitycs-storage-init:
-    image: quay.io/minio/mc:latest
-    container_name: datalitycs-storage-init
-    depends_on:
-      datalitycs-storage:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-secret123}
-    volumes:
-      - ./datalitycs-storage:/storage
-    entrypoint: ["/bin/sh", "./storage/init/minio_init.sh"]
-    restart: no
-
-  datalitycs-inputs:
-    build: ./datalitycs-inputs
-    container_name: streamlit
-    environment:
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-      MINIO_ENDPOINT: "${MINIO_ENDPOINT}"
-      MINIO_BUCKET_TEST: "${MINIO_BUCKET_TEST}"
-      MINIO_BUCKET_PREP: "${MINIO_BUCKET_PREP}"
-      MINIO_BUCKET_PROD: "${MINIO_BUCKET_PROD}"
+  omnis-storage:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env
     ports:
-      - "${STREAMLIT_INPUTS_WEB_PORT:-8501}:8501"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_WEB_UI_PORT:-9001}:9001"
     volumes:
-      - ./datalitycs-inputs/app.py:/app.py
-      - ./datalitycs-inputs/data:/data
-      - ./datalitycs-inputs/pages:/pages
-      - ./datalitycs-database:/database
-    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
-    depends_on:
-      datalitycs-storage:
-        condition: service_healthy
-      datalitycs-storage-init:
-        condition: service_completed_successfully
-      datalitycs-inputs-init:
-        condition: service_completed_successfully
+      - ./omnis-storage/minio_storage:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30m
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
-  datalitycs-inputs-init:
-    image: alpine:latest
-    container_name: streamlit-init
+  omnis-storage-init:
+    image: quay.io/minio/mc:latest
+    env_file:
+      - .env
+    depends_on:
+      omnis-storage:
+        condition: service_healthy
     volumes:
-      - ./datalitycs-inputs:/datalitycs-inputs
-      - ./datalitycs-database:/database
-    command: ["/bin/sh", "./datalitycs-inputs/init/init_csvs.sh"]
+      - ./omnis-storage:/storage
+    entrypoint: ["/bin/sh", "/storage/init/minio_init.sh"]
     restart: no
 
   airflow-postgres:
     image: postgres:16
-    profiles:
-      - airflow
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-airflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD:-airflow}
       POSTGRES_DB: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
@@ -152,8 +91,6 @@ services:
 
   airflow-apiserver:
     <<: *airflow-common
-    profiles:
-      - airflow
     command: api-server
     ports:
       - "${AIRFLOW_WEB_PORT:-8080}:8080"
@@ -171,8 +108,6 @@ services:
 
   airflow-scheduler:
     <<: *airflow-common
-    profiles:
-      - airflow
     command: scheduler
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
@@ -188,8 +123,6 @@ services:
 
   airflow-dag-processor:
     <<: *airflow-common
-    profiles:
-      - airflow
     command: dag-processor
     healthcheck:
       test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
@@ -205,8 +138,6 @@ services:
 
   airflow-triggerer:
     <<: *airflow-common
-    profiles:
-      - airflow
     command: triggerer
     healthcheck:
       test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
@@ -222,8 +153,6 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    profiles:
-      - airflow
     entrypoint: /bin/bash
     # yamllint disable rule:line-length
     command:

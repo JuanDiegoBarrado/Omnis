@@ -1,0 +1,4 @@
+destination: orig.series_gimnasio
+pipe: orig.series_gimnasio
+strategy: merge
+key: [fecha, num]

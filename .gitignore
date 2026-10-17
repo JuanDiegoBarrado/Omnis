@@ -1,20 +1,20 @@
 .env
 .venv
+*/.pytest_cache
 
-# Datalytics inputs
-datalitycs-inputs/data
+# Omnis database
+omnis-database/data
 
-# Datalytics database
-datalitycs-database/*.duckdb
+# Omnis storage
+omnis-storage/*
+!omnis-storage/init
+!omnis-storage/scripts
+!omnis-storage/readme.txt
 
-# Datalytics storage
-datalitycs-storage/*
-!datalitycs-storage/init
-!datalitycs-storage/scripts
-!datalitycs-storage/readme.txt
-
-# Datalytics airflow
-datalitycs-airflow/logs
-datalitycs-airflow/plugings/
+# Omnis airflow
+omnis-airflow/logs
 .venv/
 **/__pycache__/
+
+# Sync to dev env
+omnis-syncberrypi/

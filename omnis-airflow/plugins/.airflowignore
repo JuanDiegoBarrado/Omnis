@@ -1,0 +1,4 @@
+# plugins/ only holds the `omnis` package, imported by the DAG files (plugins/ is on sys.path).
+# There are no AirflowPlugin classes here. Without this file, Airflow executes every .py as a
+# top-level module named after its file stem (omnis/schemas/config.py would be registered as `config`).
+*
