@@ -1,16 +1,19 @@
+from types import SimpleNamespace
+
 import pytest
 
 from omnis.domain import DDL, Flow, Table, TaskDependencies
-from omnis.tests.fakes import FakeRepository, FakeRunner, FakeTask
+from omnis.tests.fakes import FakeNotifier, FakeRepository, FakeRunner, FakeTask
 
 
-def make_flow(graph: dict, tasks: list, tables: list | None = None, ddl_runner=None) -> Flow:
+def make_flow(graph: dict, tasks: list, tables: list | None = None, ddl_runner=None, notifier=None) -> Flow:
     return Flow(
         "test",
         task_dependencies_repository=FakeRepository({"graph": TaskDependencies(graph)}),
         task_repository=FakeRepository({task.name: task for task in tasks}),
         table_repository=FakeRepository({table.name: table for table in tables or []}),
         ddl_runner=ddl_runner or FakeRunner(),
+        notifier=notifier,
     )
 
 
@@ -167,3 +170,41 @@ def test_the_dag_does_not_catch_up_unless_asked():
 
     assert flow.build_airflow_dag(schedule=None).catchup is False
     assert flow.build_airflow_dag(schedule=None, catchup=True).catchup is True
+
+
+def test_a_failed_run_is_told_to_its_notifier():
+    """
+    Checks: with a notifier, the DAG's on_failure_callback tells it the flow, the run, the reason
+    and the last task, both when Airflow gives the last task and when it doesn't, and keeps any
+    on_failure_callback the DAG file gave.
+
+    If it fails: a failed run would be notified to nobody (the failure goes unnoticed while the DAG
+    sits paused), with the wrong details, or the DAG file's own failure callback would be lost.
+    """
+    notifier = FakeNotifier()
+    own_callback_calls = []
+    flow = make_flow({"a": []}, [FakeTask("a")], notifier=notifier)
+
+    dag = flow.build_airflow_dag(schedule=None, on_failure_callback=own_callback_calls.append)
+    for callback in dag.on_failure_callback:
+        callback({"dag": dag, "run_id": "run_1", "reason": "task_failure"})
+        callback({"dag": dag, "run_id": "run_2", "reason": "task_failure", "ti": SimpleNamespace(task_id="a")})
+
+    assert notifier.failures == [
+        {"flow": "test", "run_id": "run_1", "reason": "task_failure", "last_task": None},
+        {"flow": "test", "run_id": "run_2", "reason": "task_failure", "last_task": "a"},
+    ]
+    assert len(own_callback_calls) == 2
+
+
+def test_without_notifier_the_dag_has_no_failure_callback():
+    """
+    Checks: a flow built without notifier (the environment doesn't configure one) adds no
+    on_failure_callback to its DAG.
+
+    If it fails: Airflow would run a failure callback with nothing to notify, which would crash on
+    every failed run and fill the DAG processor's log with errors.
+    """
+    flow = make_flow({"a": []}, [FakeTask("a")])
+
+    assert not flow.build_airflow_dag(schedule=None).on_failure_callback

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from omnis.domain import Task
-from omnis.ports import FileDataSource, Parser, TaskRunner
+from omnis.ports import FileDataSource, Notifier, Parser, TaskRunner
 
 
 class FakeRunner(TaskRunner[Any]):
@@ -28,6 +28,16 @@ class FakeTask(Task):
     writes: tuple[str, ...] = ()
     creates: tuple[str, ...] = ()
     runner: TaskRunner[Any] = field(default_factory=FakeRunner, kw_only=True, compare=False, repr=False)
+
+
+class FakeNotifier(Notifier):
+    """Records the failures it is told about."""
+
+    def __init__(self):
+        self.failures: list[dict] = []
+
+    def notify_failure(self, flow: str, run_id: str, reason: str, last_task: str | None) -> None:
+        self.failures.append({"flow": flow, "run_id": run_id, "reason": reason, "last_task": last_task})
 
 
 class InMemoryFiles(FileDataSource):

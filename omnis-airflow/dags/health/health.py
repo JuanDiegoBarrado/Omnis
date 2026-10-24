@@ -8,6 +8,7 @@ from pathlib import Path
 
 from omnis.adapters import (
     ArchiveTaskType,
+    EmailNotifier,
     EtlTaskType,
     LocalDataSource,
     PostgresDatabase,
@@ -32,6 +33,7 @@ env = load_environment_config()
 artifacts = LocalDataSource(Path(__file__).parent)
 raw_files = S3DataSource(**env.storage_config.model_dump(), bucket=env.data_bucket_name)
 warehouse = PostgresDatabase(env.db_conn)
+notifier = EmailNotifier(**env.email.model_dump()) if env.email is not None else None
 
 flow = Flow(
     "health",
@@ -44,9 +46,14 @@ flow = Flow(
     ])),
     table_repository=TableRepository(artifacts, SqlTableParser()),
     ddl_runner=SqlDdlRunner(warehouse),
+    notifier=notifier,
 )
 
 dag = flow.build_airflow_dag(
-    schedule="0 23 * * *",
+    schedule="0 * * * *",
+    # Two runs at once would share the raw tables: one run's raw load could replace them while the other processes them
+    max_active_runs=1,
+    # A failed run pauses the DAG, so no more runs start until someone looks at it and unpauses it
+    max_consecutive_failed_dag_runs=1,
     tags=["health"],
 )

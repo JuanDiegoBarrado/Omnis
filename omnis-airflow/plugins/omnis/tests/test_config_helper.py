@@ -14,11 +14,22 @@ ENVIRONMENT = {
     "MINIO_DATA_BUCKET": "data",
 }
 
+# Optional: without all of them but SMTP_PORT, nobody is notified
+EMAIL_ENVIRONMENT = {
+    "ALERT_EMAIL": "alerts@example.com",
+    "SMTP_HOST": "smtp.gmail.com",
+    "SMTP_PORT": "465",
+    "SMTP_USER": "omnis@gmail.com",
+    "SMTP_PASSWORD": "app password",
+}
+
 
 @pytest.fixture
 def environment(monkeypatch):
     for name, value in ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
+    for name in EMAIL_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
 
@@ -52,3 +63,52 @@ def test_a_missing_variable_fails_fast(environment, name):
 
     with pytest.raises(EnvironmentError, match=name):
         load_environment_config()
+
+
+def test_builds_the_email_config_when_every_variable_is_set(environment):
+    """
+    Checks: with ALERT_EMAIL and every SMTP_* variable set, the config has the e-mail settings:
+    the SMTP server, its port as a number, the account and the recipient.
+
+    If it fails: a complete .env would not turn the failure e-mails on, or they would go through the
+    wrong server or to the wrong address.
+    """
+    for name, value in EMAIL_ENVIRONMENT.items():
+        environment.setenv(name, value)
+
+    email = load_environment_config().email
+
+    assert email is not None
+    assert email.model_dump() == {
+        "host": "smtp.gmail.com", "port": 465, "user": "omnis@gmail.com", "password": "app password", "to": "alerts@example.com",
+    }
+
+
+def test_the_smtp_port_is_587_unless_set(environment):
+    """
+    Checks: without SMTP_PORT (or with it empty), the e-mails go through port 587, the usual
+    STARTTLS one.
+
+    If it fails: a .env that leaves SMTP_PORT out would turn the e-mails off, or crash the DAG files.
+    """
+    for name, value in EMAIL_ENVIRONMENT.items():
+        environment.setenv(name, value)
+    environment.setenv("SMTP_PORT", "")
+
+    assert load_environment_config().email.port == 587
+
+
+@pytest.mark.parametrize("name", ["ALERT_EMAIL", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"])
+def test_without_any_email_variable_nobody_is_notified(environment, name):
+    """
+    Checks: if any variable an e-mail needs is missing (the test id says which), the config has no
+    e-mail settings, and loading it doesn't fail: the flows run without notifier.
+
+    If it fails: an incomplete .env would break every DAG file, or build a notifier that fails on
+    every failed run instead of leaving the e-mails off.
+    """
+    for other, value in EMAIL_ENVIRONMENT.items():
+        environment.setenv(other, value)
+    environment.delenv(name)
+
+    assert load_environment_config().email is None

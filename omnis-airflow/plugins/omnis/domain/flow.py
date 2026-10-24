@@ -9,6 +9,7 @@ from omnis.domain.tasks import DDL, Task
 
 if TYPE_CHECKING:
     from omnis.ports import (
+        Notifier,
         TableRepository,
         TaskDependenciesRepository,
         TaskRepository,
@@ -24,6 +25,8 @@ class Flow:
     each runs on), and the runner of its DDL task. On creation it checks that the graph and the
     repository name the same tasks, that each table has a single writer, and that each table is
     created once: by its DDL, or by the task that writes it (see Task.creates).
+
+    If a notifier is injected, it is told about every failed run of the flow's DAG.
     """
 
     def __init__(self,
@@ -31,13 +34,15 @@ class Flow:
         task_dependencies_repository:   TaskDependenciesRepository,
         task_repository:                TaskRepository,
         table_repository:               TableRepository,
-        ddl_runner:                     TaskRunner[DDL]
+        ddl_runner:                     TaskRunner[DDL],
+        notifier:                       Notifier | None = None,
     ):
         self.name = name
         self.task_dependencies_repository = task_dependencies_repository
         self.task_repository = task_repository
         self.table_repository = table_repository
         self.ddl_runner = ddl_runner
+        self.notifier = notifier
 
         # Load dependencies between tasks
         task_dependencies = task_dependencies_repository.find()
@@ -89,10 +94,15 @@ class Flow:
         default_args...) is passed through to Airflow.
 
         Airflow parses the DAG file again to run each task, so every task runs on the runner
-        that file injected for it.
+        that file injected for it. If the flow has a notifier, a failed run is notified through it,
+        besides any on_failure_callback given.
         """
         # TODO what is this?
         dag_arguments.setdefault("catchup", False)
+        if self.notifier is not None:
+            callbacks = dag_arguments.get("on_failure_callback") or []
+            callbacks = callbacks if isinstance(callbacks, list) else [callbacks]
+            dag_arguments["on_failure_callback"] = [*callbacks, self._notify_failure]
         
         with DAG(
             dag_id=self.name,
@@ -110,3 +120,13 @@ class Flow:
                     ddl_task >> tasks[task.name]  # pyright: ignore[reportUnusedExpression]
 
         return dag
+
+    def _notify_failure(self, context) -> None:
+        """The on_failure_callback of the DAG: Airflow runs it with the context of the failed run."""
+        last_ti = context.get("ti")
+        self.notifier.notify_failure(
+            flow=self.name,
+            run_id=context["run_id"],
+            reason=context.get("reason") or "unknown reason",
+            last_task=last_ti.task_id if last_ti is not None else None,
+        )

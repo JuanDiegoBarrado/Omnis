@@ -8,6 +8,7 @@ from .datasource.file_datasource import LocalDataSource, S3DataSource
 from .datasource.parser import SqlPipeParser, SqlTableParser, TaskParser, YamlParser, YamlTaskDependenciesParser
 from .task_runner import SqlArchiveRunner, SqlDdlRunner, SqlEtlRunner, SqlRawLoadRunner
 from .task_type import ArchiveTaskType, EtlTaskType, RawLoadTaskType
+from .notifier import EmailNotifier
 
 __all__ = [
     "LocalDataSource",
@@ -25,4 +26,5 @@ __all__ = [
     "SqlEtlRunner",
     "SqlRawLoadRunner",
     "SqlArchiveRunner",
+    "EmailNotifier",
 ]

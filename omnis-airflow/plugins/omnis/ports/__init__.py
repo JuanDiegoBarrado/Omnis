@@ -2,6 +2,7 @@ from .database import Database
 from .datasource.datasource import DataSource
 from .datasource.file_datasource import FileDataSource
 from .datasource.parser import Parser
+from .notifier import Notifier
 from .repository.pipe_repository import PipeRepository
 from .repository.repository import Repository
 from .repository.table_repository import TableRepository
@@ -22,4 +23,5 @@ __all__ = [
     "TaskType",
     "TaskRunner",
     "Database",
+    "Notifier",
 ]
