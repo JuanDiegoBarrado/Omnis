@@ -1,0 +1,9 @@
+nodes:
+  # A node that runs after nothing can be a bare key or have an empty `after`
+  raw.a:
+  raw.b:
+    after: []
+  orig.a:
+    after: [raw.a]
+  clean.ab:
+    after: [orig.a, raw.b]

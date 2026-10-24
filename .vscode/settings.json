@@ -5,7 +5,7 @@
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
   "python.testing.cwd": "${workspaceFolder}",
   "python.testing.pytestArgs": [
-    "omnis-airflow/test"
+    "omnis-airflow/plugins/omnis/tests"
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true

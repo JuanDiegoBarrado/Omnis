@@ -25,6 +25,13 @@ class SqlEtlRunner(TaskRunner[Etl]):
                 db.execute_sql(f"DELETE FROM {quote_table(etl.destination)}")
                 rowcount = db.execute_sql(self._insert(etl, columns))
             else:
+                # MERGE would insert a new key returned twice, or a NULL key on every run, without failing
+                invalid_keys = db.fetch_all(self._invalid_keys(etl, columns))
+                if invalid_keys:
+                    raise ValueError(
+                        f"ETL '{etl.name}': pipe '{etl.pipe.name}' returns key values more than once or NULL,"
+                        f" such as {invalid_keys} (key {list(etl.key)})"
+                    )
                 rowcount = db.execute_sql(self._merge(etl, columns))
 
             if etl.post_statement is not None:
@@ -41,11 +48,20 @@ class SqlEtlRunner(TaskRunner[Etl]):
         )
 
     @staticmethod
-    def _merge(etl: Etl, columns: list[str]) -> str:
+    def _invalid_keys(etl: Etl, columns: list[str]) -> str:
         missing = [column for column in etl.key if column not in columns]
         if missing:
             raise ValueError(f"ETL '{etl.name}': key columns {missing} are not produced by pipe '{etl.pipe.name}'")
 
+        key_list = ", ".join(quote(column) for column in etl.key)
+        any_null = " OR ".join(f"{quote(column)} IS NULL" for column in etl.key)
+        return (
+            f"SELECT {key_list} FROM (\n{etl.pipe.query}\n) AS pipe\n"
+            f"GROUP BY {key_list} HAVING COUNT(*) > 1 OR BOOL_OR({any_null}) LIMIT 5"
+        )
+
+    @staticmethod
+    def _merge(etl: Etl, columns: list[str]) -> str:
         matches = " AND ".join(f"target.{quote(column)} = source.{quote(column)}" for column in etl.key)
         updates = [column for column in columns if column not in etl.key]
         when_matched = (

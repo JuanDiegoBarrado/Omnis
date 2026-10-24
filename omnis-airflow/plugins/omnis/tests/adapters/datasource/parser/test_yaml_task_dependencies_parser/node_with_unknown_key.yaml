@@ -1,0 +1,5 @@
+nodes:
+  raw.a:
+  orig.a:
+    after: [raw.a]
+    type: etl
