@@ -1,7 +1,7 @@
 # Raspberry Pi mode: the stack of docker-compose.default.yaml, for a Raspberry Pi 5 shared with
 # other services, so it is tuned to use as little memory and CPU as it can. Each long-running
 # service has a mem_limit, so a leak can't take the memory of the rest of the Pi (it needs the
-# memory cgroup enabled: see readme.md)
+# memory cgroup enabled: see README.md)
 #
 # Its paths are relative to the repo root. Run it from there with --project-directory, so it reads
 # the root .env and keeps the project name (and so the containers and volumes) of the root compose:

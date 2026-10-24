@@ -1,5 +1,5 @@
 # The whole stack, with the default resources of each service. docker_compose_modes/ holds this
-# same stack in each mode it can run in (see readme.md)
+# same stack in each mode it can run in (see README.md)
 x-airflow-common:
     &airflow-common
     build: ./omnis-airflow
