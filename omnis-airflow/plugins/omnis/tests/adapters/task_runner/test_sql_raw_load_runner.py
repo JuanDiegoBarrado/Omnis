@@ -41,7 +41,7 @@ def test_lands_every_csv_directly_under_the_source_matching_columns_by_header(po
     with the name of its file in `source_file`:
       - a file with every column, and values with quoted commas and placeholders ('-');
       - a file with only some of the columns, in another order, with a header in other case and
-        with spaces, a BOM and Windows line ends: its missing columns are NULL;
+        with spaces and a BOM: its missing columns are NULL;
       - a header-only file and an empty file add no rows; a .txt and a file in a subfolder are ignored.
 
     If it fails: producers' files would land in the wrong columns, lose rows, or be read from where

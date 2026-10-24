@@ -1,3 +1,0 @@
-# Test data is kept byte for byte: some CSVs have Windows line ends or a BOM on purpose,
-# to test that the engine reads what producers drop
-omnis-airflow/plugins/omnis/tests/**/*.csv -text
