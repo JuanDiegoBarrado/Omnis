@@ -1,3 +1,5 @@
+# The whole stack, with the default resources of each service. docker_compose_modes/ holds this
+# same stack in each mode it can run in (see readme.md)
 x-airflow-common:
     &airflow-common
     build: ./omnis-airflow
@@ -57,6 +59,8 @@ services:
       interval: 30m
       retries: 5
       start_period: 10s
+      # Without it the first check would wait a whole interval
+      start_interval: 5s
     restart: unless-stopped
 
   omnis-storage:
@@ -75,6 +79,8 @@ services:
       interval: 30m
       retries: 5
       start_period: 10s
+      # omnis-storage-init waits for it to be healthy, so without this it would wait 30 min
+      start_interval: 5s
     restart: unless-stopped
 
   omnis-storage-init:

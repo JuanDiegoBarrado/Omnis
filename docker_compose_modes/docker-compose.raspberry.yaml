@@ -1,0 +1,319 @@
+# Raspberry Pi mode: the stack of docker-compose.default.yaml, for a Raspberry Pi 5 shared with
+# other services, so it is tuned to use as little memory and CPU as it can. Each long-running
+# service has a mem_limit, so a leak can't take the memory of the rest of the Pi (it needs the
+# memory cgroup enabled: see readme.md)
+#
+# Its paths are relative to the repo root. Run it from there with --project-directory, so it reads
+# the root .env and keeps the project name (and so the containers and volumes) of the root compose:
+#   docker compose --project-directory . -f docker_compose_modes/docker-compose.raspberry.yaml up -d
+
+# Docker keeps every container's output forever unless it is rotated
+x-logging:
+    &default-logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+x-airflow-common:
+    &airflow-common
+    build: ./omnis-airflow
+    logging: *default-logging
+    environment:
+      &airflow-common-env
+      # Read by the DAG files (omnis.config_helper). Hosts and ports are the internal ones of the Docker network
+      POSTGRES_HOST: omnis-database
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: omnis-storage:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+      # Failure e-mails (omnis.config_helper): off unless all of them but SMTP_PORT are set
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+      # Resources. LocalExecutor keeps up to `parallelism` worker processes in the scheduler, and a run
+      # of health never has more than a few tasks ready at once
+      AIRFLOW__CORE__PARALLELISM: '2'
+      # Each API server worker is a whole Python process, and one is enough for a single user
+      AIRFLOW__API__WORKERS: '1'
+      # A DAG file is parsed again every 5 min (not 30 s), in a single process: a change to a flow
+      # takes up to that long to show in the UI. Runs are hourly
+      AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES: '1'
+      AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: '300'
+      # The scheduler polls its database less often when there is nothing to do
+      AIRFLOW__SCHEDULER__SCHEDULER_IDLE_SLEEP_TIME: '5'
+    volumes:
+      - ./omnis-airflow/dags:/opt/airflow/dags
+      - ./omnis-airflow/logs:/opt/airflow/logs
+      - ./omnis-airflow/config:/opt/airflow/config
+      - ./omnis-airflow/plugins:/opt/airflow/plugins
+    user: "${AIRFLOW_UID:-1000}:0"
+    depends_on:
+      &airflow-common-depends-on
+      airflow-postgres:
+        condition: service_healthy
+      omnis-storage-init:
+        condition: service_completed_successfully
+
+services:
+  omnis-database:
+    image: postgres:16
+    # The warehouse is small: a smaller cache, and few connections (one per running task, plus the user's)
+    command: postgres -c shared_buffers=64MB -c max_connections=20
+    mem_limit: 512m
+    logging: *default-logging
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./omnis-database/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-default_user}"]
+      interval: 30m
+      retries: 5
+      start_period: 10s
+      # Without it the first check would wait a whole interval
+      start_interval: 5s
+    restart: unless-stopped
+
+  omnis-storage:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    mem_limit: 512m
+    logging: *default-logging
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # MinIO is written in Go, whose memory grows until it nears this limit before collecting garbage
+      GOMEMLIMIT: 384MiB
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_WEB_UI_PORT:-9001}:9001"
+    volumes:
+      - ./omnis-storage/minio_storage:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30m
+      retries: 5
+      start_period: 10s
+      # omnis-storage-init waits for it to be healthy, so without this it would wait 30 min
+      start_interval: 5s
+    restart: unless-stopped
+
+  omnis-storage-init:
+    image: quay.io/minio/mc:latest
+    environment:
+      MINIO_ENDPOINT: omnis-storage:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+    depends_on:
+      omnis-storage:
+        condition: service_healthy
+    volumes:
+      - ./omnis-storage:/storage
+    entrypoint: ["/bin/sh", "/storage/init/minio_init.sh"]
+    restart: no
+
+  airflow-postgres:
+    image: postgres:16
+    # Airflow's metadata database: only reachable inside the Docker network, so its credentials are
+    # fixed here and must match AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+    command: postgres -c shared_buffers=32MB
+    mem_limit: 256m
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    mem_limit: 1g
+    ports:
+      - "${AIRFLOW_WEB_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    # The tasks run in here too (LocalExecutor)
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    mem_limit: 768m
+    healthcheck:
+      # Each check starts a whole Airflow CLI, which on the Pi costs seconds of CPU: nothing waits
+      # for it to be healthy, so it is checked rarely
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 10m
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # There is no airflow-triggerer: it only runs deferrable tasks, and no task type defers. A task
+  # type that does would need it back
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    # yamllint disable rule:line-length
+    command:
+      - -c
+      - |
+        if [[ -z "${AIRFLOW_UID}" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
+          echo "If you are on Linux, you SHOULD follow the instructions below to set "
+          echo "AIRFLOW_UID environment variable, otherwise files will be owned by root."
+          echo "For other operating systems you can get rid of the warning with manually created .env file:"
+          echo "    See: https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#setting-the-right-airflow-user"
+          echo
+          export AIRFLOW_UID=$$(id -u)
+        fi
+        one_meg=1048576
+        mem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf PAGE_SIZE) / one_meg))
+        cpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)
+        disk_available=$$(df / | tail -1 | awk '{print $$4}')
+        warning_resources="false"
+        if (( mem_available < 4000 )) ; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough memory available for Docker.\e[0m"
+          echo "At least 4GB of memory required. You have $$(numfmt --to iec $$((mem_available * one_meg)))"
+          echo
+          warning_resources="true"
+        fi
+        if (( cpus_available < 2 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough CPUS available for Docker.\e[0m"
+          echo "At least 2 CPUs recommended. You have $${cpus_available}"
+          echo
+          warning_resources="true"
+        fi
+        if (( disk_available < one_meg * 10 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough Disk space available for Docker.\e[0m"
+          echo "At least 10 GBs recommended. You have $$(numfmt --to iec $$((disk_available * 1024 )))"
+          echo
+          warning_resources="true"
+        fi
+        if [[ $${warning_resources} == "true" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: You have not enough resources to run Airflow (see above)!\e[0m"
+          echo "Please follow the instructions to increase amount of resources available:"
+          echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
+          echo
+        fi
+        echo
+        echo "Creating missing opt dirs if missing:"
+        echo
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Airflow version:"
+        /entrypoint airflow version
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Running airflow config list to create default config file if missing."
+        echo
+        /entrypoint airflow config list >/dev/null
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
+        echo
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        echo
+        echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
+        echo
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+
+    # yamllint enable rule:line-length
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:0"
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    # Workaround for entrypoint issue. See: https://github.com/apache/airflow/issues/16252
+    command:
+      - bash
+      - -c
+      - airflow
+    depends_on:
+      <<: *airflow-common-depends-on
+
+volumes:
+  postgres-db-volume:
