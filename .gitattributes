@@ -1,0 +1,2 @@
+# Run by /bin/sh inside the containers, which fails on CRLF line ends
+*.sh text eol=lf

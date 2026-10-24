@@ -98,6 +98,53 @@ services:
     entrypoint: ["/bin/sh", "/storage/init/minio_init.sh"]
     restart: no
 
+  # Monthly backups (see each script): one folder per copy, named YYYYMMDDHHMMSS (UTC), in the
+  # backups/ folder of the service it copies. A failed copy is e-mailed and not retried
+  omnis-database-backup:
+    build: ./omnis-backup
+    environment:
+      # Read by pg_dump and pg_restore
+      PGHOST: omnis-database
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Failure e-mails (omnis-backup/notify_failure.py): off unless all of them but SMTP_PORT are set
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    depends_on:
+      omnis-database:
+        condition: service_healthy
+    volumes:
+      - ./omnis-database/scripts:/scripts:ro
+      - ./omnis-database/backups:/backups
+    entrypoint: ["/bin/sh", "/scripts/postgres_backup.sh"]
+    restart: unless-stopped
+
+  omnis-storage-backup:
+    build: ./omnis-backup
+    environment:
+      MINIO_ENDPOINT: omnis-storage:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+      # Failure e-mails (omnis-backup/notify_failure.py): off unless all of them but SMTP_PORT are set
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    depends_on:
+      omnis-storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./omnis-storage/scripts:/scripts:ro
+      - ./omnis-storage/backups:/backups
+    entrypoint: ["/bin/sh", "/scripts/minio_backup.sh"]
+    restart: unless-stopped
+
   airflow-postgres:
     image: postgres:16
     # Airflow's metadata database: only reachable inside the Docker network, so its credentials are

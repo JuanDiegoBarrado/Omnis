@@ -11,10 +11,12 @@ CLAUDE.md
 
 # Omnis database
 omnis-database/data
+omnis-database/backups
 
 # Omnis storage
 omnis-storage/*
 !omnis-storage/init
+!omnis-storage/scripts
 !omnis-storage/readme.txt
 
 # Omnis airflow
