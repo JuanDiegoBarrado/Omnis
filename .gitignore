@@ -1,6 +1,12 @@
+# Env file
 .env
+
+# Python env files
 .venv
-*/.pytest_cache
+.pytest_cache/
+**/__pycache__/
+
+# Claude generated files
 CLAUDE.md
 
 # Omnis database
@@ -9,13 +15,7 @@ omnis-database/data
 # Omnis storage
 omnis-storage/*
 !omnis-storage/init
-!omnis-storage/scripts
 !omnis-storage/readme.txt
 
 # Omnis airflow
 omnis-airflow/logs
-.venv/
-**/__pycache__/
-
-# Sync to dev env
-omnis-syncberrypi/
