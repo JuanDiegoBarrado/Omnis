@@ -104,7 +104,7 @@ Everything is set in `.env`; [`.env.example`](.env.example) has every variable w
 |---|---|
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | The warehouse database and its user. |
 | `POSTGRES_HOST_PORT` | Port of the warehouse on the host (`5432`). |
-| `AIRFLOW_UID` | User the Airflow containers run as. On Linux, the output of `id -u`; elsewhere any value. |
+| `AIRFLOW_UID` | User the Airflow containers run as. On Linux, the output of `id -u` (`1000`, the default, for the first user); elsewhere any value. |
 | `AIRFLOW_WEB_PORT` | Port of the Airflow UI (`8080`). |
 | `_AIRFLOW_WWW_USER_USERNAME`, `_AIRFLOW_WWW_USER_PASSWORD` | Admin user of the Airflow UI, created on the first start. |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | MinIO's root user (password of 8+ characters), also used by the flows. |
