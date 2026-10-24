@@ -1,18 +1,9 @@
 # Health flow: gym series and running sessions. Its DAG (schedule, tags...) is health.py.
-# Every node not marked otherwise is the ETL of the same name (etls/<node>.yaml).
+# Only which task precedes which: each node is defined in tasks/<node>.yaml.
 nodes:
   # Raw: files dropped by the producers in the data bucket, landed as text
   raw.series_gimnasio:
-    type: raw_load
-    source: raw/new/series_gimnasio/
-    destination: raw.series_gimnasio
-    columns: [fecha, num, ejercicio, peso, reps, rir, rpe]
   raw.sesiones_carrera:
-    type: raw_load
-    source: raw/new/sesiones_carrera/
-    destination: raw.sesiones_carrera
-    columns: [fecha, num, categoria, modalidad, distancia, tiempo, cals, fc_avg, fc_max,
-              por_z1, por_z2, por_z3, por_z4, por_z5]
 
   # Orig
   orig.series_gimnasio:

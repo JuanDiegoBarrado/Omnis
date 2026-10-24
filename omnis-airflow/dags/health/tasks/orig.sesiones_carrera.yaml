@@ -1,0 +1,5 @@
+type: etl
+destination: orig.sesiones_carrera
+pipe: orig.sesiones_carrera
+strategy: merge
+key: [fecha, num]

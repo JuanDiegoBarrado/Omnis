@@ -1,0 +1,4 @@
+type: raw_load
+source: raw/new/series_gimnasio/
+destination: raw.series_gimnasio
+columns: [fecha, num, ejercicio, peso, reps, rir, rpe]

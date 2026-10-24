@@ -1,0 +1,5 @@
+type: raw_load
+source: raw/new/sesiones_carrera/
+destination: raw.sesiones_carrera
+columns: [fecha, num, categoria, modalidad, distancia, tiempo, cals, fc_avg, fc_max,
+          por_z1, por_z2, por_z3, por_z4, por_z5]
