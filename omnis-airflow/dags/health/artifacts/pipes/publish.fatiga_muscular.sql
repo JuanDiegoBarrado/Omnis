@@ -1,3 +1,7 @@
+-- publish.fatiga_muscular: the work of each muscle group per day, one row per day and group, rebuilt on every run.
+-- Rules:
+--   - The three deltoid heads (anterior, lateral, posterior) add up into one group, `deltoides`.
+--   - Every group of a day has its row, also when its SI is 0 or NULL.
 SELECT
     id_fatiga,
     fecha,

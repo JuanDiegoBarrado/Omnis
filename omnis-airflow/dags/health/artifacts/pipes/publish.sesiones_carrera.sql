@@ -1,3 +1,4 @@
+-- publish.sesiones_carrera: clean.sesiones_carrera as published, rebuilt on every run. No rules of its own.
 SELECT
     id_sesion,
     fecha,

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS clean.series_gimnasio(
     ejercicio   VARCHAR     NOT NULL,
     categoria   VARCHAR     NOT NULL,
     peso        FLOAT       NOT NULL,
-    por_rm    FLOAT       NOT NULL,
+    por_rm    FLOAT,                -- NULL when peso is 0
     reps        INTEGER     NOT NULL,
     rir       FLOAT       NOT NULL,
     rpe       FLOAT       NOT NULL,

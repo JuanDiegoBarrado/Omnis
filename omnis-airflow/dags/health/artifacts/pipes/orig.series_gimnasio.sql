@@ -1,5 +1,11 @@
--- Typed gym series from the last raw load. Rows with any missing value are discarded.
--- One row per (fecha, num): the ETL merges them by that key.
+-- orig.series_gimnasio: the gym series of the last raw load, typed. The ETL merges them by (fecha, num).
+-- Rules:
+--   - Placeholder values are NULL (raw.null_if_placeholder). `num` may come as a decimal ("1.0").
+--   - A value that doesn't cast to its type (a date that isn't one...) fails the whole ETL, and orig
+--     is left as it was until the raw file is fixed.
+--   - Rows with any missing value are discarded, without failing.
+--   - One row per (fecha, num). If the raw load has several rows with the same fecha and num (the
+--     same series in two files, or twice in one), one of them is kept at random.
 SELECT DISTINCT ON (fecha, num)
     fecha, num, ejercicio, peso, reps, rir, rpe
 FROM (

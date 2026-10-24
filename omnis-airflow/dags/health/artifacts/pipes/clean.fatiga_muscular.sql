@@ -1,3 +1,11 @@
+-- clean.fatiga_muscular: the work of each muscle group per day, rebuilt on every run.
+-- Rules:
+--   - One row per day with gym series. id_fatiga is the date (YYYYMMDD).
+--   - Each muscle group adds up, over the series of the day, the share of that group in the exercise
+--     of each series (orig.ejercicios_musculares). Every series counts the same, whatever its weight,
+--     reps or RPE.
+--   - An exercise that isn't in orig.ejercicios_musculares adds nothing. A day whose exercises are all
+--     missing there has every group NULL.
 SELECT
     CAST(TO_CHAR(a.fecha, 'YYYYMMDD') AS VARCHAR) AS id_fatiga,
     a.fecha AS fecha,

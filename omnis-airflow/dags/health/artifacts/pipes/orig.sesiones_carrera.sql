@@ -1,6 +1,13 @@
--- Typed running sessions from the last raw load. Rows with any missing value are discarded.
--- `tiempo` goes from HH:MM:SS to minutes and the zone shares are normalized to add up to 1.
--- One row per (fecha, num): the ETL merges them by that key.
+-- orig.sesiones_carrera: the running sessions of the last raw load, typed. The ETL merges them by (fecha, num).
+-- Rules:
+--   - Placeholder values are NULL (raw.null_if_placeholder). `num` may come as a decimal ("1.0").
+--   - A value that doesn't cast to its type (a `tiempo` that isn't HH:MM:SS...) fails the whole ETL,
+--     and orig is left as it was until the raw file is fixed.
+--   - Rows with any missing value are discarded, without failing.
+--   - `tiempo` goes from HH:MM:SS to minutes.
+--   - The zone shares (por_z1..por_z5) are normalized to add up to 1. If all five are 0, they are NULL.
+--   - One row per (fecha, num). If the raw load has several rows with the same fecha and num (the
+--     same session in two files, or twice in one), one of them is kept at random.
 SELECT DISTINCT ON (fecha, num)
     fecha,
     num,

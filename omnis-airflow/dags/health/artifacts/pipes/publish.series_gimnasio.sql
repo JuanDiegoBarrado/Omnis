@@ -1,3 +1,4 @@
+-- publish.series_gimnasio: clean.series_gimnasio as published, rebuilt on every run. No rules of its own.
 SELECT
     id_serie,
     fecha,
