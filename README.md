@@ -152,6 +152,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 ├── docker_compose_modes/      # the same stack per mode (default, raspberry)
 ├── .env.example               # template of .env
 ├── omnis-airflow/
+│   ├── config/                # airflow.cfg, generated on the first start
 │   ├── dags/<flow>/           # one folder per flow
 │   └── plugins/omnis/         # the engine, with its tests
 ├── omnis-database/            # warehouse data, its backups and backup script
@@ -168,6 +169,10 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 | `omnis-database-backup`, `omnis-storage-backup` | Monthly backups (see [Backups](#backups)). |
 
 To run an Airflow CLI command: `docker compose --profile debug run --rm airflow-cli <command>`, e.g. `dags list`.
+
+Airflow is configured in the compose files, with `AIRFLOW__<SECTION>__<KEY>` variables, so every machine runs it the
+same way. `omnis-airflow/config/airflow.cfg` is not in the repo: `airflow-init` generates it on the first start, with
+random secret keys of its own on every machine. Deleting it and restarting the stack generates new keys.
 
 ### Anatomy of a flow
 
