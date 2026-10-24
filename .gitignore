@@ -1,6 +1,7 @@
 .env
 .venv
 */.pytest_cache
+CLAUDE.md
 
 # Omnis database
 omnis-database/data
