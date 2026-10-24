@@ -1,0 +1,4 @@
+type: archive
+files_from: raw.series_gimnasio
+source: raw/new/series_gimnasio/
+destination: raw/his/series_gimnasio/

@@ -20,3 +20,8 @@ class LocalDataSource(FileDataSource):
 
     def read_file(self, path: str) -> bytes:
         return (self._root / path).read_bytes()
+
+    def move_file(self, path: str, new_path: str) -> None:
+        target = self._root / new_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        (self._root / path).replace(target)

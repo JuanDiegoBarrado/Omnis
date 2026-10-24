@@ -6,8 +6,8 @@ The repositories are not here: they are concrete (ports/repository/), built on a
 from .database import PostgresDatabase
 from .datasource.file_datasource import LocalDataSource, S3DataSource
 from .datasource.parser import SqlPipeParser, SqlTableParser, TaskParser, YamlParser, YamlTaskDependenciesParser
-from .task_runner import SqlDdlRunner, SqlEtlRunner, SqlRawLoadRunner
-from .task_type import EtlTaskType, RawLoadTaskType
+from .task_runner import SqlArchiveRunner, SqlDdlRunner, SqlEtlRunner, SqlRawLoadRunner
+from .task_type import ArchiveTaskType, EtlTaskType, RawLoadTaskType
 
 __all__ = [
     "LocalDataSource",
@@ -20,7 +20,9 @@ __all__ = [
     "PostgresDatabase",
     "EtlTaskType",
     "RawLoadTaskType",
+    "ArchiveTaskType",
     "SqlDdlRunner",
     "SqlEtlRunner",
     "SqlRawLoadRunner",
+    "SqlArchiveRunner",
 ]

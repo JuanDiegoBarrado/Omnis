@@ -1,7 +1,7 @@
 from .task_dependencies import TaskDependencies
 from .flow import Flow
 from .table import Table
-from .tasks import DDL, Etl, Pipe, RawLoad, Task, WriteStrategy
+from .tasks import DDL, Archive, Etl, Pipe, RawLoad, Task, WriteStrategy
 
 __all__ = [
     "TaskDependencies",
@@ -13,4 +13,5 @@ __all__ = [
     "Etl",
     "WriteStrategy",
     "RawLoad",
+    "Archive",
 ]

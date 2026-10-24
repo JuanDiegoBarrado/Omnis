@@ -19,3 +19,10 @@ class DataSource(ABC):
     @abstractmethod
     def describe(self, location: str, name: str, format: str) -> str:
         """Where `name` is kept, as the error messages show it (a file path...)."""
+
+    @abstractmethod
+    def move(self, location: str, name: str, format: str, to_location: str) -> bool:
+        """
+        Move `name` from `location` to `to_location`, replacing what is there with that name.
+        Returns False, moving nothing, when there is no such content under `location`.
+        """

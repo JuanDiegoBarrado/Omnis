@@ -17,7 +17,8 @@ def _csv_header(content: bytes) -> list[str]:
 class SqlRawLoadRunner(TaskRunner[RawLoad]):
     """
     Lands the CSV files of a raw load into a relational database (PostgreSQL syntax), reading
-    them from `raw_files`: every CSV under its `source`. Each load runs in a single transaction.
+    them from `raw_files`: every CSV under its `source`. Each row gets the name of its file in
+    RawLoad.FILE_COLUMN. Each load runs in a single transaction.
     """
 
     def __init__(self, database: Database, raw_files: DataSource):
@@ -28,7 +29,8 @@ class SqlRawLoadRunner(TaskRunner[RawLoad]):
         raw_load = task
         destination = quote_table(raw_load.destination)
         schema = quote(raw_load.destination.split(".", 1)[0])
-        columns = ", ".join(f"{quote(column)} TEXT" for column in raw_load.columns)
+        file_column = quote(RawLoad.FILE_COLUMN)
+        columns = ", ".join(f"{quote(column)} TEXT" for column in (*raw_load.columns, RawLoad.FILE_COLUMN))
 
         loaded = 0
         with self._database as db:
@@ -49,5 +51,6 @@ class SqlRawLoadRunner(TaskRunner[RawLoad]):
 
                 logger.info(f"Loading {path} into {raw_load.destination}")
                 loaded += db.copy_csv(raw_load.destination, header, content)
+                db.execute_sql(f"UPDATE {destination} SET {file_column} = %s WHERE {file_column} IS NULL", (name,))
 
         return loaded

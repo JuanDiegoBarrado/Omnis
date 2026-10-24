@@ -8,7 +8,7 @@ class FileDataSource(DataSource):
     """
     Data kept one per file, `<location>/<name>.<format>` with '/'-separated paths (`location` is
     a folder, the root when empty). Files in subfolders of a location are not under it.
-    Each implementation only says how to list and read files (S3/MinIO, local filesystem...).
+    Each implementation only says how to list, read and move files (S3/MinIO, local filesystem...).
     """
 
     @abstractmethod
@@ -22,6 +22,10 @@ class FileDataSource(DataSource):
     @abstractmethod
     def read_file(self, path: str) -> bytes:
         pass
+
+    @abstractmethod
+    def move_file(self, path: str, new_path: str) -> None:
+        """Move the file at `path` to `new_path`, replacing it if it exists."""
 
     def query_names(self, location: str, format: str) -> list[str]:
         prefix = _prefix(location)
@@ -38,6 +42,13 @@ class FileDataSource(DataSource):
         if not self.exists(path):
             return None
         return self.read_file(path)
+
+    def move(self, location: str, name: str, format: str, to_location: str) -> bool:
+        path = self.describe(location, name, format)
+        if not self.exists(path):
+            return False
+        self.move_file(path, self.describe(to_location, name, format))
+        return True
 
     def describe(self, location: str, name: str, format: str) -> str:
         """The path of the file of `name`."""

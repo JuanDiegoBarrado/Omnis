@@ -11,6 +11,12 @@ nodes:
   orig.sesiones_carrera:
     after: [raw.sesiones_carrera]
 
+  # Archive: the raw files go to his/ once orig has taken them in, so they are loaded only once
+  archive.series_gimnasio:
+    after: [orig.series_gimnasio]
+  archive.sesiones_carrera:
+    after: [orig.sesiones_carrera]
+
   # Clean
   clean.series_gimnasio:
     after: [orig.series_gimnasio]

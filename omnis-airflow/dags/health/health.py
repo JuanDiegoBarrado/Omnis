@@ -7,11 +7,13 @@ What runs and in which order is in graph.yaml, tasks/, tables/ and artifacts/ ne
 from pathlib import Path
 
 from omnis.adapters import (
+    ArchiveTaskType,
     EtlTaskType,
     LocalDataSource,
     PostgresDatabase,
     RawLoadTaskType,
     S3DataSource,
+    SqlArchiveRunner,
     SqlDdlRunner,
     SqlEtlRunner,
     SqlPipeParser,
@@ -38,6 +40,7 @@ flow = Flow(
     task_repository=TaskRepository(artifacts, TaskParser(YamlParser(), task_types=[
         EtlTaskType(pipe_repository=PipeRepository(artifacts, SqlPipeParser()), runner=SqlEtlRunner(warehouse)),
         RawLoadTaskType(runner=SqlRawLoadRunner(warehouse, raw_files=raw_files)),
+        ArchiveTaskType(runner=SqlArchiveRunner(warehouse, raw_files=raw_files)),
     ])),
     table_repository=TableRepository(artifacts, SqlTableParser()),
     ddl_runner=SqlDdlRunner(warehouse),

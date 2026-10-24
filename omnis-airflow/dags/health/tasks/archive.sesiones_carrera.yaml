@@ -1,0 +1,4 @@
+type: archive
+files_from: raw.sesiones_carrera
+source: raw/new/sesiones_carrera/
+destination: raw/his/sesiones_carrera/

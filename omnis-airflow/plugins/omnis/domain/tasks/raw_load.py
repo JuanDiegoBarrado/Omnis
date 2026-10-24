@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from omnis.domain.tasks.task import Task
 
@@ -16,8 +16,12 @@ class RawLoad(Task):
 
     Every run replaces the destination with the content of the raw files found under `source`.
     The destination is a text-only table with the declared `columns`, which the load creates
-    itself; files may carry any subset of them, matched by their header.
+    itself; files may carry any subset of them, matched by their header. It also has the column
+    FILE_COLUMN, the name of the file each row comes from, so an Archive can tell which files
+    were loaded.
     """
+
+    FILE_COLUMN: ClassVar[str] = "source_file"
 
     name: str
     source: str
@@ -28,6 +32,8 @@ class RawLoad(Task):
     def __post_init__(self):
         if not self.columns:
             raise ValueError(f"Raw load '{self.name}' declares no columns")
+        if self.FILE_COLUMN in self.columns:
+            raise ValueError(f"Raw load '{self.name}': column '{self.FILE_COLUMN}' is reserved for the file name")
 
     @property
     def writes(self) -> tuple[str, ...]:

@@ -45,3 +45,8 @@ class S3DataSource(FileDataSource):
     def read_file(self, path: str) -> bytes:
         response = self._s3.get_object(Bucket=self._bucket, Key=path)
         return response["Body"].read()
+
+    def move_file(self, path: str, new_path: str) -> None:
+        # S3 has no move: copy, then delete the original
+        self._s3.copy_object(Bucket=self._bucket, Key=new_path, CopySource={"Bucket": self._bucket, "Key": path})
+        self._s3.delete_object(Bucket=self._bucket, Key=path)
