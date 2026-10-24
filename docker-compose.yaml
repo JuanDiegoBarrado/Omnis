@@ -1,12 +1,19 @@
 x-airflow-common:
     &airflow-common
     build: ./omnis-airflow
-    env_file:
-      - .env
     environment:
       &airflow-common-env
+      # Read by the DAG files (omnis.config_helper). Hosts and ports are the internal ones of the Docker network
+      POSTGRES_HOST: omnis-database
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: omnis-storage:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__WEBSERVER__BASE_URL: "http://${HOST_DEVICE_IP}:${AIRFLOW_WEB_PORT:-8080}"
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ''
@@ -14,14 +21,13 @@ x-airflow-common:
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
       AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
-      _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
       AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
     volumes:
       - ./omnis-airflow/dags:/opt/airflow/dags
       - ./omnis-airflow/logs:/opt/airflow/logs
       - ./omnis-airflow/config:/opt/airflow/config
       - ./omnis-airflow/plugins:/opt/airflow/plugins
-    user: "${AIRFLOW_UID:-50000}:0"
+    user: "${AIRFLOW_UID:-1000}:0"
     depends_on:
       &airflow-common-depends-on
       airflow-postgres:
@@ -33,9 +39,11 @@ services:
   omnis-database:
     image: postgres:16
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    env_file:
-      - .env
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./omnis-database/data:/var/lib/postgresql/data
     healthcheck:
@@ -48,8 +56,9 @@ services:
   omnis-storage:
     image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
-    env_file:
-      - .env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_WEB_UI_PORT:-9001}:9001"
@@ -64,8 +73,11 @@ services:
 
   omnis-storage-init:
     image: quay.io/minio/mc:latest
-    env_file:
-      - .env
+    environment:
+      MINIO_ENDPOINT: omnis-storage:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
     depends_on:
       omnis-storage:
         condition: service_healthy
@@ -76,9 +88,11 @@ services:
 
   airflow-postgres:
     image: postgres:16
+    # Airflow's metadata database: only reachable inside the Docker network, so its credentials are
+    # fixed here and must match AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
     environment:
-      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER:-airflow}
-      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD:-airflow}
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
@@ -240,7 +254,6 @@ services:
       _AIRFLOW_WWW_USER_CREATE: 'true'
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
-      _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
 
   airflow-cli:
