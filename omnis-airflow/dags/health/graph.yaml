@@ -20,15 +20,18 @@ nodes:
   # Clean
   clean.series_gimnasio:
     after: [orig.series_gimnasio]
-  clean.fatiga_muscular:
-    after: [orig.series_gimnasio]
+  clean.impacto_muscular:
+    after: [clean.series_gimnasio]
   clean.sesiones_carrera:
     after: [orig.sesiones_carrera]
 
   # Publish
+  publish.calendario:
+    after: [clean.series_gimnasio, clean.sesiones_carrera]
+  publish.grupos_musculares:
   publish.series_gimnasio:
     after: [clean.series_gimnasio]
-  publish.fatiga_muscular:
-    after: [clean.fatiga_muscular]
+  publish.impacto_muscular:
+    after: [clean.impacto_muscular]
   publish.sesiones_carrera:
     after: [clean.sesiones_carrera]

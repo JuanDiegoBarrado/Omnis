@@ -1,3 +1,0 @@
-type: etl
-destination: publish.fatiga_muscular
-pipe: publish.fatiga_muscular
