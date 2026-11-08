@@ -8,6 +8,7 @@ import pytest
 
 from omnis.adapters import PostgresDatabase, SqlEtlRunner
 from omnis.domain import Etl, Pipe, WriteStrategy
+from omnis.tests.fakes import RUN_CONTEXT
 
 pytestmark = pytest.mark.integration
 
@@ -42,6 +43,6 @@ def test_merge(postgres, case):
         runner=SqlEtlRunner(PostgresDatabase(postgres.dsn)),
     )
 
-    etl.runner.run(etl)
+    etl.runner.run(etl, RUN_CONTEXT)
 
     postgres.assert_tables(case / "expected")

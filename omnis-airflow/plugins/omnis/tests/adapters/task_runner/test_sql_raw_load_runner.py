@@ -9,6 +9,7 @@ import pytest
 
 from omnis.adapters import LocalDataSource, PostgresDatabase, SqlRawLoadRunner
 from omnis.domain import RawLoad
+from omnis.tests.fakes import RUN_CONTEXT
 
 pytestmark = pytest.mark.integration
 
@@ -49,7 +50,7 @@ def test_lands_every_csv_directly_under_the_source_matching_columns_by_header(po
     """
     raw_load = make_raw_load(postgres, DATA / "producer_formats")
 
-    loaded = raw_load.runner.run(raw_load)
+    loaded = raw_load.runner.run(raw_load, RUN_CONTEXT)
 
     assert loaded == 3
     postgres.assert_tables(DATA / "producer_formats" / "expected")
@@ -65,7 +66,7 @@ def test_without_files_it_leaves_its_table_empty(postgres, tmp_path):
     """
     raw_load = make_raw_load(postgres, tmp_path)
 
-    assert raw_load.runner.run(raw_load) == 0
+    assert raw_load.runner.run(raw_load, RUN_CONTEXT) == 0
     postgres.assert_tables(DATA / "empty" / "expected")
 
 
@@ -79,11 +80,11 @@ def test_replaces_what_the_previous_run_loaded(postgres, tmp_path):
     """
     raw_load = make_raw_load(postgres, tmp_path)
     drop_files("first_run", tmp_path)
-    raw_load.runner.run(raw_load)
+    raw_load.runner.run(raw_load, RUN_CONTEXT)
 
     remove_files(tmp_path)
     drop_files("second_run", tmp_path)
-    raw_load.runner.run(raw_load)
+    raw_load.runner.run(raw_load, RUN_CONTEXT)
 
     postgres.assert_tables(DATA / "second_run" / "expected")
 
@@ -98,10 +99,10 @@ def test_a_file_with_an_undeclared_column_fails_and_keeps_the_previous_load(post
     """
     raw_load = make_raw_load(postgres, tmp_path)
     drop_files("first_run", tmp_path)
-    raw_load.runner.run(raw_load)
+    raw_load.runner.run(raw_load, RUN_CONTEXT)
 
     drop_files("undeclared_column", tmp_path)
     with pytest.raises(ValueError, match=r"columns \['unknown'\] not declared"):
-        raw_load.runner.run(raw_load)
+        raw_load.runner.run(raw_load, RUN_CONTEXT)
 
     postgres.assert_tables(DATA / "first_run" / "expected")

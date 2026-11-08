@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from airflow.sdk import task
 
+from omnis.domain.run_context import RunContext
+
 if TYPE_CHECKING:
     from airflow.sdk.definitions.xcom_arg import XComArg
 
@@ -36,10 +38,15 @@ class Task(ABC):
         return ""
 
     def build_task(self) -> XComArg:
-        """Add the Airflow task that runs this task on its runner to the DAG being defined, and return it."""
+        """
+        Add the Airflow task that runs this task on its runner to the DAG being defined, and return it.
+        The runner is told the run it runs in (the DAG id, which is the flow name, and the run id),
+        so it can sign what it writes.
+        """
 
         @task(task_id=self.name, doc_md=self.doc or None)
-        def run():
-            return self.runner.run(self)
+        def run(**context):
+            # Airflow passes its context to a task function that takes **kwargs
+            return self.runner.run(self, RunContext(flow=context["dag"].dag_id, run_id=context["run_id"]))
 
         return run()

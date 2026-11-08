@@ -9,6 +9,7 @@ from psycopg2 import errors
 
 from omnis.adapters import PostgresDatabase, SqlEtlRunner
 from omnis.domain import Etl, Pipe, WriteStrategy
+from omnis.tests.fakes import RUN_CONTEXT
 
 pytestmark = pytest.mark.integration
 
@@ -34,7 +35,7 @@ def run(postgres, query: str, strategy=WriteStrategy.MERGE, **etl_arguments) -> 
         runner=SqlEtlRunner(PostgresDatabase(postgres.dsn)),
         **etl_arguments,
     )
-    return etl.runner.run(etl)
+    return etl.runner.run(etl, RUN_CONTEXT)
 
 
 @pytest.mark.parametrize("strategy", list(WriteStrategy))
@@ -153,3 +154,22 @@ def test_a_merge_whose_key_the_pipe_does_not_return_fails_and_writes_nothing(pos
         run(postgres, "SELECT CAST(fecha AS DATE) AS fecha FROM src.origin")
 
     postgres.assert_tables(DATA / "given")
+
+
+@pytest.mark.parametrize("strategy", list(WriteStrategy))
+def test_signs_what_it_writes_with_its_run(postgres, strategy):
+    """
+    Checks: the ETL signs its transaction with its run (`<flow>/<run_id>`) before writing, so a row
+    it inserts (id 3, new) sees the signature. The destination has an extra column that the pipe
+    doesn't produce, whose default is the signature, as the traceability trigger of the warehouse
+    reads it.
+
+    If it fails: the warehouse couldn't tell which run of Airflow wrote each row. Its `sys_blame`
+    would only say "omnis_airflow", and a wrong row could not be traced back to the run (and so to
+    the files and logs) that wrote it.
+    """
+    postgres.execute("ALTER TABLE dst.destination ADD COLUMN blame TEXT DEFAULT current_setting('omnis.blame', true)")
+
+    run(postgres, PIPE, strategy)
+
+    assert postgres.fetch("SELECT blame FROM dst.destination WHERE id = 3") == [(RUN_CONTEXT.blame,)]

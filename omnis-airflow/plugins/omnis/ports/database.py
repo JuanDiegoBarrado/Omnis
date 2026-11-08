@@ -37,3 +37,12 @@ class Database(ABC):
     def copy_csv(self, table_name: str, columns: list[str], content: bytes) -> int:
         """Bulk load CSV content (UTF-8, with a header line) into `columns` of a table. Returns the rows loaded."""
         pass
+
+    @abstractmethod
+    def sign(self, identifier: str) -> None:
+        """
+        Sign with `identifier` what the current transaction writes, so the database can record who
+        wrote each row (how it records it is up to the database). The signature ends with the
+        transaction.
+        """
+        pass

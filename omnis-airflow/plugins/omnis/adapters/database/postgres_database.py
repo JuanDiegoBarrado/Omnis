@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 class PostgresDatabase(Database):
     """Database over PostgreSQL, through psycopg2."""
 
+    # The setting a signature is kept in for the transaction. The traceability trigger of the
+    # warehouse reads it (omnis-database/init/), so both must use the same name
+    BLAME_SETTING = "omnis.blame"
+
     _dsn: str
     _conn: connection | None
 
@@ -74,3 +78,9 @@ class PostgresDatabase(Database):
         with conn.cursor() as cursor:
             cursor.copy_expert(copy_sql.as_string(conn), BytesIO(content))
             return cursor.rowcount
+
+    def sign(self, identifier: str) -> None:
+        logger.info(f"SQL: Signing the transaction as {identifier}")
+        with self._require_conn().cursor() as cursor:
+            # Local to the transaction (is_local = true), like SET LOCAL, but with the value as a parameter
+            cursor.execute("SELECT set_config(%s, %s, true)", (self.BLAME_SETTING, identifier))

@@ -1,5 +1,5 @@
 from omnis.adapters.task_runner.sql_identifiers import quote, quote_table
-from omnis.domain import Etl, WriteStrategy
+from omnis.domain import Etl, RunContext, WriteStrategy
 from omnis.ports import Database, TaskRunner
 
 
@@ -8,15 +8,17 @@ class SqlEtlRunner(TaskRunner[Etl]):
     Runs ETLs on a relational database (PostgreSQL syntax).
 
     The pipe of an ETL is a SELECT, embedded as a subquery: its output columns are written into the
-    destination columns of the same name. Each ETL runs in a single transaction.
+    destination columns of the same name. Each ETL runs in a single transaction, signed with the
+    run it belongs to.
     """
 
     def __init__(self, database: Database):
         self._database = database
 
-    def run(self, task: Etl) -> int:
+    def run(self, task: Etl, context: RunContext) -> int:
         etl = task
         with self._database as db:
+            db.sign(context.blame)
             if etl.pre_statement is not None:
                 db.execute_sql(etl.pre_statement)
 

@@ -277,7 +277,9 @@ task types within one flow, can run on different engines.
 
 **Adding a task type** takes a `Task` subclass in `domain/tasks/`, its `TaskType` (which validates its YAML) in
 `adapters/task_type/`, its runner in `adapters/task_runner/`, and an entry in the `task_types` of each `<flow>.py`
-that uses it. No existing code changes.
+that uses it. No existing code changes. A runner gets the task and the run it belongs to (`RunContext`): if it writes
+rows to the warehouse, it signs its transaction with the run (`database.sign(context.blame)`), so each row says which
+run wrote it.
 
 The Airflow image adds what the engine imports, listed in `omnis-airflow/requirements.txt` (UTF-16 encoded). After
 changing it, rebuild with `docker compose build`.

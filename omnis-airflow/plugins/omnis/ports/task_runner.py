@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+if TYPE_CHECKING:
+    from omnis.domain import RunContext
 
 T = TypeVar("T")
 
@@ -11,5 +16,8 @@ class TaskRunner(ABC, Generic[T]):
     """
 
     @abstractmethod
-    def run(self, task: T) -> int:
-        """Do the work of `task`. Returns how much it did (rows written, tables applied...)."""
+    def run(self, task: T, context: RunContext) -> int:
+        """
+        Do the work of `task` in the run `context`. A runner that writes traced data signs it with
+        `context.blame`. Returns how much it did (rows written, tables applied...).
+        """
