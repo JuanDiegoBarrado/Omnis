@@ -61,8 +61,11 @@ services:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-default_user}"]
       interval: 30m
       retries: 5
-      start_period: 10s
-      # Without it the first check would wait a whole interval
+      # A new warehouse first runs initdb, which takes longer than a few seconds (more on a Pi's SD
+      # card). Until it answers it is checked every start_interval, and it is healthy as soon as it
+      # does: with a short start period, a check that failed meanwhile would leave it waiting a whole
+      # interval, and Airflow with it (it waits for omnis-database-init, which waits for this)
+      start_period: 5m
       start_interval: 5s
     restart: unless-stopped
 
