@@ -22,16 +22,26 @@ nodes:
     after: [orig.series_gimnasio]
   clean.impacto_muscular:
     after: [clean.series_gimnasio]
+  clean.impacto_zona:
+    after: [clean.impacto_muscular]
   clean.sesiones_carrera:
     after: [orig.sesiones_carrera]
+  clean.calendario:
+    after: [clean.series_gimnasio, clean.sesiones_carrera]
 
   # Publish
   publish.calendario:
-    after: [clean.series_gimnasio, clean.sesiones_carrera]
+    after: [clean.calendario]
   publish.grupos_musculares:
   publish.series_gimnasio:
     after: [clean.series_gimnasio]
   publish.impacto_muscular:
     after: [clean.impacto_muscular]
+  publish.impacto_zona:
+    after: [clean.impacto_zona]
+  publish.carga_semanal_grupo:
+    after: [clean.calendario, clean.impacto_muscular]
+  publish.carga_semanal_zona:
+    after: [clean.calendario, clean.impacto_zona]
   publish.sesiones_carrera:
     after: [clean.sesiones_carrera]

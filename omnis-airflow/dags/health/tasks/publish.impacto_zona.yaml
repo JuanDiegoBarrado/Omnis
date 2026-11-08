@@ -1,0 +1,3 @@
+type: etl
+destination: publish.impacto_zona
+pipe: publish.impacto_zona
