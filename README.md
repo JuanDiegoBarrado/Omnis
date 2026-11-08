@@ -224,6 +224,10 @@ no other column, so a row loaded again keeps its dates and its author. A table g
 rows it already had say `unknown`. `full_rebuild` tables are written again on every run, so their columns tell when and
 by whom the table was last rebuilt.
 
+The `orig` tables of `health` also keep `sys_source_file`, the raw file of the last load that changed each row. Their
+pipes write it, and since a merge doesn't rewrite a row that came back with the same values, the same row in another
+file keeps the file it was first loaded from.
+
 The engine signs what each task writes with its run, as in `omnis_airflow:health/scheduled__2026-11-08T10:00:00+00:00`.
 A person writing by hand is blamed with their login, and can add a detail, for one transaction or for the rest of the
 session:

@@ -5,9 +5,12 @@
 --     is left as it was until the raw file is fixed.
 --   - Rows with any missing value are discarded, without failing.
 --   - One row per (fecha, num). If the raw load has several rows with the same fecha and num (the
---     same series in two files, or twice in one), one of them is kept at random.
+--     same series in two files, or twice in one), one of them is kept at random, and so its file.
+--   - sys_source_file is the raw file the row comes from. The merge only rewrites a row whose values
+--     changed, so it keeps the file of the last load that changed the row: the same values in
+--     another file leave it as it was.
 SELECT DISTINCT ON (fecha, num)
-    fecha, num, ejercicio, peso, reps, rir, rpe
+    fecha, num, ejercicio, peso, reps, rir, rpe, sys_source_file
 FROM (
     SELECT
         CAST(raw.null_if_placeholder(fecha) AS DATE)                        AS fecha,
@@ -16,7 +19,8 @@ FROM (
         CAST(raw.null_if_placeholder(peso) AS FLOAT)                        AS peso,
         CAST(raw.null_if_placeholder(reps) AS FLOAT)                        AS reps,
         CAST(raw.null_if_placeholder(rir) AS FLOAT)                         AS rir,
-        CAST(raw.null_if_placeholder(rpe) AS FLOAT)                         AS rpe
+        CAST(raw.null_if_placeholder(rpe) AS FLOAT)                         AS rpe,
+        source_file                                                         AS sys_source_file
     FROM raw.series_gimnasio
 ) typed
 WHERE fecha IS NOT NULL AND num IS NOT NULL AND ejercicio IS NOT NULL
