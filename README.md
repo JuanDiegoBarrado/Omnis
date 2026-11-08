@@ -164,7 +164,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 | Service | What it does |
 |---|---|
 | `omnis-database` | PostgreSQL 16, the warehouse. The flows create every table they need. |
-| `omnis-database-init` | Sets up the roles of the warehouse and who owns and reads what (see [Roles and logins](#roles-and-logins)), then exits. Airflow waits for it. |
+| `omnis-database-init` | Sets up the roles of the warehouse, who owns and reads what (see [Roles and logins](#roles-and-logins)) and the [traceability](#traceability) of its tables, then exits. Airflow waits for it. |
 | `omnis-storage` | MinIO, the landing zone of the raw files. |
 | `omnis-storage-init` | Creates the data bucket if it doesn't exist, then exits. |
 | `airflow-*` | Airflow 3.1 (LocalExecutor), with its own metadata database. |
@@ -207,6 +207,35 @@ CREATE ROLE jd LOGIN IN ROLE database_admin;
 
 To take it away, `DROP ROLE jd;`. A client like DBeaver connects to `localhost`, port `POSTGRES_HOST_PORT`, database
 `POSTGRES_DB`, with that login.
+
+### Traceability
+
+Every table of the flows but those of `raw` (a copy of their files, which already says the file of each row) has three
+columns that the warehouse keeps itself, whoever writes:
+
+| Column | What it holds |
+|---|---|
+| `sys_fec_insert` | When the row was inserted (the start of its transaction). It never changes. |
+| `sys_fec_mod` | When it last changed. When inserted, the same as `sys_fec_insert`. |
+| `sys_blame` | Who last changed it: their login, followed by the detail they signed with, if any (`<login>:<detail>`). |
+
+A trigger fills them on every insert and update, whatever the statement sets them to, and skips an update that changes
+no other column, so a row loaded again keeps its dates and its author. A table gets them as soon as it is created, and
+rows it already had say `unknown`. `full_rebuild` tables are written again on every run, so their columns tell when and
+by whom the table was last rebuilt.
+
+The engine signs what each task writes with its run, as in `omnis_airflow:health/scheduled__2026-11-08T10:00:00+00:00`.
+A person writing by hand is blamed with their login, and can add a detail, for one transaction or for the rest of the
+session:
+
+```sql
+SET LOCAL omnis.blame = 'fix of the dates of 2026-10';   -- inside a transaction, only for it
+SET omnis.blame = 'fix of the dates of 2026-10';         -- for the rest of the session
+```
+
+The detail is what the writer says, so it gives context but proves nothing; the login does, and `SET ROLE` doesn't change
+it. A `database_admin` can turn the trigger off, as the owner of the tables can, so that group is only for people trusted
+with it.
 
 ### Anatomy of a flow
 
@@ -351,7 +380,7 @@ version.)
   `<schema>.<table>.csv`.
 - Every test starts with a docstring saying what it checks and, if it fails, what is broken and why it matters.
 
-The warehouse has its own tests, of the SQL its init applies (roles, owners and permissions), in
+The warehouse has its own tests, of the SQL its init applies (roles, owners and permissions, traceability), in
 [`omnis-database/tests/`](omnis-database/tests). They run with the engine's, on a throwaway PostgreSQL too, and don't
 depend on the engine.
 

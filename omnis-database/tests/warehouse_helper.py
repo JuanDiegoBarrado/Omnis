@@ -42,16 +42,23 @@ class Warehouse:
         self.server = server
         self.name = name
 
-    def execute(self, role: str, query: str, params=None) -> None:
-        connection = self.server.connect(self.name, role)
+    def connect(self, role: str):
+        """A connection as the role, for a test that needs several transactions in one session."""
+        return self.server.connect(self.name, role)
+
+    def execute(self, role: str, query: str, params=None) -> int:
+        """Run the SQL and return the rows its last statement affected."""
+        connection = self.connect(role)
         try:
             with connection, connection.cursor() as cursor:
                 cursor.execute(query, params)
+                return cursor.rowcount
         finally:
             connection.close()
 
     def fetch(self, role: str, query: str, params=None) -> list[tuple]:
-        connection = self.server.connect(self.name, role)
+        """Run the SQL and return the rows of its last statement."""
+        connection = self.connect(role)
         try:
             with connection, connection.cursor() as cursor:
                 cursor.execute(query, params)
@@ -73,3 +80,18 @@ class Warehouse:
         }[kind]
         [(owner,)] = self.fetch(SUPERUSER, query, (name,))
         return owner
+
+    def tracking(self, table: str) -> tuple[list[str], bool]:
+        """The system columns that the warehouse keeps of a table, and whether its trigger is on it."""
+        columns = self.fetch(
+            SUPERUSER,
+            "SELECT attname::text FROM pg_attribute WHERE attrelid = %s::regclass AND attname::text"
+            " IN ('sys_fec_insert', 'sys_fec_mod', 'sys_blame') AND NOT attisdropped ORDER BY attnum",
+            (table,),
+        )
+        [(has_trigger,)] = self.fetch(
+            SUPERUSER,
+            "SELECT EXISTS (SELECT FROM pg_trigger WHERE tgrelid = %s::regclass AND tgname = 'sys_track_changes')",
+            (table,),
+        )
+        return [column for (column,) in columns], has_trigger

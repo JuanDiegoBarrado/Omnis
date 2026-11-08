@@ -14,7 +14,8 @@ class PostgresDatabase(Database):
     """Database over PostgreSQL, through psycopg2."""
 
     # The setting a signature is kept in for the transaction. The traceability trigger of the
-    # warehouse reads it (omnis-database/init/), so both must use the same name
+    # warehouse reads it (sys.current_blame, in omnis-database/init/sql/03_tracking.sql), so both
+    # must use the same name
     BLAME_SETTING = "omnis.blame"
 
     _dsn: str

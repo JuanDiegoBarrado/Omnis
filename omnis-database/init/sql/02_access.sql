@@ -22,12 +22,15 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- Los permisos se dan antes de cambiar el dueño, mientras quien crea el objeto aún es su dueño: al
--- cambiarlo, pasan a constar como dados por omnis_airflow
+-- cambiarlo, pasan a constar como dados por omnis_airflow. El dueño solo se cambia si no lo es ya,
+-- porque ALTER ... OWNER bloquea el objeto aunque no cambie nada, y el barrido corre en cada arranque
 CREATE OR REPLACE FUNCTION sys.claim_schema(schema_oid oid) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
-    schema_name name := (SELECT nspname FROM pg_namespace WHERE oid = schema_oid);
+    schema_name name;
+    owner oid;
 BEGIN
+    SELECT nspname, nspowner INTO schema_name, owner FROM pg_namespace WHERE oid = schema_oid;
     IF NOT sys.is_flow_schema(schema_oid) THEN
         RETURN;
     END IF;
@@ -35,7 +38,9 @@ BEGIN
     IF schema_name = 'publish' THEN
         EXECUTE format('GRANT USAGE ON SCHEMA %I TO visualization', schema_name);
     END IF;
-    EXECUTE format('ALTER SCHEMA %I OWNER TO omnis_airflow', schema_name);
+    IF owner <> 'omnis_airflow'::regrole THEN
+        EXECUTE format('ALTER SCHEMA %I OWNER TO omnis_airflow', schema_name);
+    END IF;
 END
 $$;
 
@@ -44,8 +49,9 @@ LANGUAGE plpgsql AS $$
 DECLARE
     schema_oid oid;
     kind "char";
+    owner oid;
 BEGIN
-    SELECT relnamespace, relkind INTO schema_oid, kind FROM pg_class WHERE oid = relation;
+    SELECT relnamespace, relkind, relowner INTO schema_oid, kind, owner FROM pg_class WHERE oid = relation;
     -- Tablas (también las particionadas), vistas y vistas materializadas
     IF NOT sys.is_flow_schema(schema_oid) OR kind NOT IN ('r', 'p', 'v', 'm') THEN
         RETURN;
@@ -54,19 +60,25 @@ BEGIN
     IF (SELECT nspname FROM pg_namespace WHERE oid = schema_oid) = 'publish' THEN
         EXECUTE format('GRANT SELECT ON %s TO visualization', relation);
     END IF;
-    EXECUTE format(
-        'ALTER %s %s OWNER TO omnis_airflow',
-        CASE kind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'TABLE' END,
-        relation
-    );
+    IF owner <> 'omnis_airflow'::regrole THEN
+        EXECUTE format(
+            'ALTER %s %s OWNER TO omnis_airflow',
+            CASE kind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'TABLE' END,
+            relation
+        );
+    END IF;
 END
 $$;
 
 -- Las funciones ya las puede ejecutar cualquiera (PUBLIC), así que solo cambia su dueño
 CREATE OR REPLACE FUNCTION sys.claim_routine(routine regprocedure) RETURNS void
 LANGUAGE plpgsql AS $$
+DECLARE
+    schema_oid oid;
+    owner oid;
 BEGIN
-    IF sys.is_flow_schema((SELECT pronamespace FROM pg_proc WHERE oid = routine)) THEN
+    SELECT pronamespace, proowner INTO schema_oid, owner FROM pg_proc WHERE oid = routine;
+    IF sys.is_flow_schema(schema_oid) AND owner <> 'omnis_airflow'::regrole THEN
         EXECUTE format('ALTER ROUTINE %s OWNER TO omnis_airflow', routine);
     END IF;
 END
