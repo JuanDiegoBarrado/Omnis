@@ -1,2 +1,2 @@
-id,fecha,peso
-2,2026-01-02,85.5
+id,fecha,peso,source_file
+2,2026-01-02,85.5,file_2

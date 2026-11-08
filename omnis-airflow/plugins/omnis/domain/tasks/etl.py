@@ -29,7 +29,7 @@ class WriteStrategy(Enum):
     """How an ETL writes the rows of its pipe into its destination."""
 
     FULL_REBUILD = "full_rebuild"   # replace the whole content of the destination
-    MERGE = "merge"                 # update the rows whose key already exists, insert the rest
+    MERGE = "merge"                 # update the rows whose key already exists and that changed, insert the rest
 
 
 @dataclass(frozen=True)

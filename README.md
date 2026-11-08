@@ -233,9 +233,13 @@ pre_statement: ...       # optional SQL, run before writing
 post_statement: ...      # optional SQL, run after writing
 ```
 
-`full_rebuild` replaces the whole table (`DELETE` + `INSERT ... SELECT`); `merge` updates the rows whose key already
-exists and inserts the rest (`MERGE`), so the table keeps its history. A merge pipe must not return the same key twice
-nor a NULL key (use `DISTINCT ON` and filter NULLs): the engine checks it and fails the task.
+`full_rebuild` replaces the whole table (`DELETE` + `INSERT ... SELECT`); `merge` inserts the rows whose key is new and
+updates the loaded ones only when one of their values changed (`MERGE`), so the table keeps its history and a row loaded
+again is left as it was. Columns named `sys_*` (like `sys_source_file`) are written with the row but not compared: they
+never make a row change on their own. Since a merge compares each column of the pipe with the destination's, their types
+must be comparable: cast them in the pipe (an integer into a `TEXT` column fails), and use `jsonb` rather than `json`,
+which can't be compared. A merge pipe must not return the same key twice nor a NULL key (use `DISTINCT ON` and filter
+NULLs): the engine checks it and fails the task.
 
 **`raw_load`** lands every `.csv` directly under `source` (a prefix of the data bucket) into `destination`:
 

@@ -1,2 +1,2 @@
-id,fecha,peso
-1,2026-01-01,
+id,fecha,peso,sys_source_file
+1,2026-01-01,,file_2

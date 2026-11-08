@@ -10,7 +10,18 @@ class SqlEtlRunner(TaskRunner[Etl]):
     The pipe of an ETL is a SELECT, embedded as a subquery: its output columns are written into the
     destination columns of the same name. Each ETL runs in a single transaction, signed with the
     run it belongs to.
+
+    A merge only updates the rows that changed: a row whose key is already loaded is rewritten only
+    if some column other than the key and the system ones differs (IS DISTINCT FROM, so a NULL
+    against a value is a change). A system column of the pipe (like `sys_source_file`) is written
+    with the rest when the row changes, but doesn't make it change on its own. Its row count is the
+    rows inserted or changed. Comparing needs each column of the pipe to have a type the
+    destination's compares with: a value that is only assignable (an integer into a TEXT column) or
+    a type without equality (json) fails the merge when it is planned, before writing anything.
     """
+
+    # Columns the warehouse keeps about a row rather than data of it (when, who, from which file)
+    SYSTEM_COLUMN_PREFIX = "sys_"
 
     def __init__(self, database: Database):
         self._database = database
@@ -62,20 +73,27 @@ class SqlEtlRunner(TaskRunner[Etl]):
             f"GROUP BY {key_list} HAVING COUNT(*) > 1 OR BOOL_OR({any_null}) LIMIT 5"
         )
 
-    @staticmethod
-    def _merge(etl: Etl, columns: list[str]) -> str:
+    @classmethod
+    def _merge(cls, etl: Etl, columns: list[str]) -> str:
         matches = " AND ".join(f"target.{quote(column)} = source.{quote(column)}" for column in etl.key)
         updates = [column for column in columns if column not in etl.key]
-        when_matched = (
-            "UPDATE SET " + ", ".join(f"{quote(column)} = source.{quote(column)}" for column in updates)
-            if updates else "DO NOTHING"
-        )
+        compared = [column for column in updates if not column.startswith(cls.SYSTEM_COLUMN_PREFIX)]
+        if compared:
+            target_row = ", ".join(f"target.{quote(column)}" for column in compared)
+            source_row = ", ".join(f"source.{quote(column)}" for column in compared)
+            changed = f"ROW({target_row}) IS DISTINCT FROM ROW({source_row})"
+            set_list = ", ".join(f"{quote(column)} = source.{quote(column)}" for column in updates)
+            when_matched = f"WHEN MATCHED AND {changed} THEN UPDATE SET {set_list}"
+        else:
+            # Nothing but the key (and system columns) to compare: a loaded key never changes
+            when_matched = "WHEN MATCHED THEN DO NOTHING"
+
         column_list = ", ".join(quote(column) for column in columns)
         values = ", ".join(f"source.{quote(column)}" for column in columns)
         return (
             f"MERGE INTO {quote_table(etl.destination)} AS target\n"
             f"USING (\n{etl.pipe.query}\n) AS source\n"
             f"ON {matches}\n"
-            f"WHEN MATCHED THEN {when_matched}\n"
+            f"{when_matched}\n"
             f"WHEN NOT MATCHED THEN INSERT ({column_list}) VALUES ({values})"
         )
