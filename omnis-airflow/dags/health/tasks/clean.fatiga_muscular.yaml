@@ -1,3 +1,0 @@
-type: etl
-destination: clean.fatiga_muscular
-pipe: clean.fatiga_muscular

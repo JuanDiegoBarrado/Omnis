@@ -1,0 +1,3 @@
+type: etl
+destination: clean.impacto_zona
+pipe: clean.impacto_zona
