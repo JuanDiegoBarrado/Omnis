@@ -72,7 +72,7 @@ docker compose up -d
 |---|---|---|
 | Airflow UI | http://localhost:8080 | `_AIRFLOW_WWW_USER_USERNAME` / `_AIRFLOW_WWW_USER_PASSWORD` |
 | MinIO console | http://localhost:9001 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` |
-| PostgreSQL warehouse | `localhost:5432` | `POSTGRES_USER` / `POSTGRES_PASSWORD`, database `POSTGRES_DB` |
+| PostgreSQL warehouse | `localhost:5432` | A login of your own (see [Roles and logins](#roles-and-logins)), database `POSTGRES_DB` |
 
 **3. Turn the flow on.** New flows start paused: in the Airflow UI, unpause the `health` DAG. It runs every hour.
 
@@ -102,7 +102,8 @@ Everything is set in `.env`; [`.env.example`](.env.example) has every variable w
 
 | Variable | What it is |
 |---|---|
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | The warehouse database and its user. |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | The warehouse database and its superuser, which only its init, its backups and whoever creates logins use. |
+| `POSTGRES_AIRFLOW_PASSWORD` | Password of `omnis_airflow`, the role the flows use. Only Airflow needs it, so any random string. |
 | `POSTGRES_HOST_PORT` | Port of the warehouse on the host (`5432`). |
 | `AIRFLOW_UID` | User the Airflow containers run as. On Linux, the output of `id -u` (`1000`, the default, for the first user); elsewhere any value. |
 | `AIRFLOW_WEB_PORT` | Port of the Airflow UI (`8080`). |
@@ -155,7 +156,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 │   ├── config/                # airflow.cfg, generated on the first start
 │   ├── dags/<flow>/           # one folder per flow
 │   └── plugins/omnis/         # the engine, with its tests
-├── omnis-database/            # warehouse data, its backups and backup script
+├── omnis-database/            # warehouse data, its init (roles and permissions) with its tests, backups and backup script
 ├── omnis-storage/             # bucket data, its backups, init and backup scripts
 └── omnis-backup/              # image of the backup services
 ```
@@ -163,6 +164,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 | Service | What it does |
 |---|---|
 | `omnis-database` | PostgreSQL 16, the warehouse. The flows create every table they need. |
+| `omnis-database-init` | Sets up the roles of the warehouse and who owns and reads what (see [Roles and logins](#roles-and-logins)), then exits. Airflow waits for it. |
 | `omnis-storage` | MinIO, the landing zone of the raw files. |
 | `omnis-storage-init` | Creates the data bucket if it doesn't exist, then exits. |
 | `airflow-*` | Airflow 3.1 (LocalExecutor), with its own metadata database. |
@@ -173,6 +175,38 @@ To run an Airflow CLI command: `docker compose --profile debug run --rm airflow-
 Airflow is configured in the compose files, with `AIRFLOW__<SECTION>__<KEY>` variables, so every machine runs it the
 same way. `omnis-airflow/config/airflow.cfg` is not in the repo: `airflow-init` generates it on the first start, with
 random secret keys of its own on every machine. Deleting it and restarting the stack generates new keys.
+
+### Roles and logins
+
+Nobody works with the warehouse's superuser (`POSTGRES_USER`). On every start, `omnis-database-init` sets up a role
+for the engine and three groups, and every person or tool logs in with a login of their own, member of one of them:
+
+| Role | Who uses it | What it can do |
+|---|---|---|
+| `omnis_airflow` | The flows, through Airflow (`POSTGRES_AIRFLOW_PASSWORD`) | Create the schemas of its flows, and own everything in them. |
+| `database_admin` | Whoever maintains the warehouse by hand | Whatever `omnis_airflow` can: read, write and change the structure of the flows' tables. |
+| `database_user` | Programmers following the data | Read every schema of the flows, `raw` included. |
+| `visualization` | Dashboards and BI tools | Read `publish`, and nothing else. |
+
+Everything created in the flows' schemas (every schema but `public`), by the engine or by an admin, becomes
+`omnis_airflow`'s as soon as it is created, and the groups can read it from then on. A login of each person, rather
+than one shared per group, is what lets the warehouse say who changed a row, and lets you take one person's access away
+without changing anyone else's password.
+
+To create a login, open `psql` as the superuser and create it in its group. `\password` asks for its password without
+leaving it in any history:
+
+```bash
+docker compose exec omnis-database sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+```sql
+CREATE ROLE jd LOGIN IN ROLE database_admin;
+\password jd
+```
+
+To take it away, `DROP ROLE jd;`. A client like DBeaver connects to `localhost`, port `POSTGRES_HOST_PORT`, database
+`POSTGRES_DB`, with that login.
 
 ### Anatomy of a flow
 
@@ -317,6 +351,10 @@ version.)
   `<schema>.<table>.csv`.
 - Every test starts with a docstring saying what it checks and, if it fails, what is broken and why it matters.
 
+The warehouse has its own tests, of the SQL its init applies (roles, owners and permissions), in
+[`omnis-database/tests/`](omnis-database/tests). They run with the engine's, on a throwaway PostgreSQL too, and don't
+depend on the engine.
+
 ### Backups
 
 `omnis-database-backup` and `omnis-storage-backup` copy the warehouse (`pg_dump`) and the data bucket (`mc mirror`)
@@ -334,6 +372,10 @@ To restore one, with the stack running (`<copy>` is the folder name):
 docker compose exec omnis-database-backup sh -c 'pg_restore --clean --if-exists -d "$PGDATABASE" /backups/<copy>/"$PGDATABASE".dump'
 docker compose exec omnis-storage-backup sh -c 'mc mirror --overwrite /backups/<copy>/"$MINIO_DATA_BUCKET" local/"$MINIO_DATA_BUCKET"'
 ```
+
+A copy of the warehouse holds its tables and their permissions, but not the logins: they belong to the PostgreSQL
+server, not to the database. Restored into a new server, the engine's role and the groups are there (the init creates
+them on start), but the logins have to be created again.
 
 ## License
 
