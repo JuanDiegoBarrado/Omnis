@@ -152,7 +152,7 @@ access away, `DROP ROLE bob;`. Write down which logins you created: they are not
 ### 4. Run the example flow
 
 The repo ships the flow `health`. New flows start paused, so in the Airflow UI, unpause the `health` DAG. From then on
-it runs every day at 03:00 UTC.
+it runs every day at 14:00, Madrid time.
 
 Save this as `series_gimnasio_20261001120000.csv`:
 
