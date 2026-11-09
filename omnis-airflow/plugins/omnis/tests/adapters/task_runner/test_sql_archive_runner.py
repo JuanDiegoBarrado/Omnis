@@ -8,6 +8,7 @@ import pytest
 
 from omnis.adapters import LocalDataSource, PostgresDatabase, SqlArchiveRunner, SqlRawLoadRunner
 from omnis.domain import Archive, RawLoad
+from omnis.tests.fakes import RUN_CONTEXT
 
 pytestmark = pytest.mark.integration
 
@@ -51,7 +52,7 @@ def test_moves_only_the_files_named_in_its_table(postgres, tmp_path):
     postgres.execute("INSERT INTO raw.t VALUES ('1', 'a'), ('2', 'a'), ('3', 'b'), ('4', NULL)")
     archive = make_archive(postgres, tmp_path)
 
-    assert archive.runner.run(archive) == 2
+    assert archive.runner.run(archive, RUN_CONTEXT) == 2
     assert files_under(tmp_path) == ["raw/his/t/a.csv", "raw/his/t/b.csv", "raw/new/t/c.csv"]
 
 
@@ -67,8 +68,8 @@ def test_a_file_already_moved_is_skipped_so_it_can_be_retried(postgres, tmp_path
     postgres.execute("INSERT INTO raw.t VALUES ('1', 'a'), ('2', 'b')")
     archive = make_archive(postgres, tmp_path)
 
-    assert archive.runner.run(archive) == 1
-    assert archive.runner.run(archive) == 0
+    assert archive.runner.run(archive, RUN_CONTEXT) == 1
+    assert archive.runner.run(archive, RUN_CONTEXT) == 0
     assert files_under(tmp_path) == ["raw/his/t/b.csv"]
 
 
@@ -81,7 +82,7 @@ def test_with_its_table_empty_it_moves_nothing(postgres, tmp_path):
     drop(tmp_path, "a")
     archive = make_archive(postgres, tmp_path)
 
-    assert archive.runner.run(archive) == 0
+    assert archive.runner.run(archive, RUN_CONTEXT) == 0
     assert files_under(tmp_path) == ["raw/new/t/a.csv"]
 
 
@@ -103,8 +104,8 @@ def test_a_file_dropped_after_the_raw_load_waits_for_the_next_run(postgres, tmp_
     archive = make_archive(postgres, tmp_path)
     drop(tmp_path, "loaded")
 
-    raw_load.runner.run(raw_load)
+    raw_load.runner.run(raw_load, RUN_CONTEXT)
     drop(tmp_path, "late")
-    archive.runner.run(archive)
+    archive.runner.run(archive, RUN_CONTEXT)
 
     assert files_under(tmp_path) == ["raw/his/t/loaded.csv", "raw/new/t/late.csv"]

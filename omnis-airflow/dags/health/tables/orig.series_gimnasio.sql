@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS orig.series_gimnasio(
     reps        FLOAT   NOT NULL,
     rir       FLOAT   NOT NULL,
     rpe       FLOAT   NOT NULL,
+    sys_source_file VARCHAR NOT NULL,
     CHECK((peso >= 0)),
     CHECK((reps >= 0)),
     CHECK((rir >= 0)),

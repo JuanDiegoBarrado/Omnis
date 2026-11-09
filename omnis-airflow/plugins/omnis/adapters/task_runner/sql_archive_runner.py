@@ -1,7 +1,7 @@
 import logging
 
 from omnis.adapters.task_runner.sql_identifiers import quote, quote_table
-from omnis.domain import Archive, RawLoad
+from omnis.domain import Archive, RawLoad, RunContext
 from omnis.ports import Database, DataSource, TaskRunner
 
 logger = logging.getLogger(__name__)
@@ -11,14 +11,14 @@ class SqlArchiveRunner(TaskRunner[Archive]):
     """
     Moves the CSV files of `raw_files` named in the raw load table of an archive (PostgreSQL
     syntax). A file that is no longer in its source (already moved by an earlier try) is skipped,
-    so a failed archive can be retried.
+    so a failed archive can be retried. It only reads the database, so it signs nothing.
     """
 
     def __init__(self, database: Database, raw_files: DataSource):
         self._database = database
         self._raw_files = raw_files
 
-    def run(self, task: Archive) -> int:
+    def run(self, task: Archive, context: RunContext) -> int:
         archive = task
         file_column = quote(RawLoad.FILE_COLUMN)
         with self._database as db:

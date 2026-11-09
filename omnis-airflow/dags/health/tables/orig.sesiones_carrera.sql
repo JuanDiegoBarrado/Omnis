@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS orig.sesiones_carrera(
     por_z3    FLOAT   NOT NULL,
     por_z4    FLOAT   NOT NULL,
     por_z5    FLOAT   NOT NULL,
+    sys_source_file VARCHAR NOT NULL,
     CHECK((tiempo >= 0)),
     CHECK((distancia >= 0)),
     CHECK((cals >= 0)),

@@ -1,22 +1,30 @@
-"""Test doubles of the ports, for the tests that must not depend on any adapter."""
+"""
+Test doubles of the ports, for the tests that must not depend on any adapter, and the run the
+tests run their tasks in.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from omnis.domain import Task
+from omnis.domain import RunContext, Task
 from omnis.ports import FileDataSource, Notifier, Parser, TaskRunner
+
+# The run every test runs its tasks in, when the run itself is not what it checks
+RUN_CONTEXT = RunContext("test", "manual__test")
 
 
 class FakeRunner(TaskRunner[Any]):
-    """Records the tasks it runs and returns `result`."""
+    """Records the tasks it runs and the run of each, and returns `result`."""
 
     def __init__(self, result: int = 0):
         self.result = result
         self.runs: list[Task] = []
+        self.contexts: list[RunContext] = []
 
-    def run(self, task: Any) -> int:
+    def run(self, task: Any, context: RunContext) -> int:
         self.runs.append(task)
+        self.contexts.append(context)
         return self.result
 
 

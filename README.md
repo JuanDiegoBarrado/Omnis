@@ -49,9 +49,19 @@ The repo ships one flow, `health` (gym series, running sessions and muscular fat
 
 ## Quickstart
 
-You need [Docker](https://docs.docker.com/get-docker/) with Compose v2 and about 4 GB of memory for it.
+These steps take a machine with nothing installed but Docker to a running Omnis, with your own logins, a first flow
+loaded and its backups kept safe. Follow them in order: some settings are only read on the very first start.
 
-**1. Clone the repo and create your `.env`** from the template:
+### Before you start
+
+- [Docker](https://docs.docker.com/get-docker/) with Compose v2, and at least 4 GB of memory, 2 CPUs and 10 GB of disk
+  for it (`airflow-init` warns on start if it has less).
+- Free ports on the machine: `5432` (warehouse), `8080` (Airflow), `9000` and `9001` (MinIO). Any of them can be
+  changed in `.env`.
+- On a **Raspberry Pi**, read [Raspberry Pi](#raspberry-pi) first: it needs a kernel setting, and every
+  `docker compose` command below runs with its mode file instead.
+
+### 1. Clone the repo and configure it
 
 ```bash
 git clone https://github.com/JuanDiegoBarrado/Omnis.git
@@ -59,24 +69,92 @@ cd Omnis
 cp .env.example .env
 ```
 
-Edit `.env` and change at least every `change-me`. It is gitignored, so your passwords stay on your machine. Every
-variable is described in [Configuration](#configuration).
+Edit `.env` (it is gitignored, so your passwords stay on your machine). Every variable is described in
+[Configuration](#configuration); these are the ones to look at:
 
-**2. Start the stack.** The first start builds the images and sets up Airflow, so it takes a few minutes:
+- **Every `change-me`**: a different random password for each, for example the output of `openssl rand -hex 16`. Stick
+  to letters and digits: Compose reads a `$` in `.env` as the start of a variable. MinIO's needs 8 characters or more.
+- **`AIRFLOW_UID`**, on Linux only: the output of `id -u`, so the logs Airflow writes belong to you.
+- **The ports**, if any of the defaults is taken.
+- **The failure alerts** (`ALERT_EMAIL` and `SMTP_*`). They are optional but strongly recommended: `health` pauses
+  itself after a failed run until you look at it, and without an e-mail nothing tells you.
+
+> [!IMPORTANT]
+> Choose `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` and the Airflow admin user now. They are applied on the
+> first start only: changing them later in `.env` doesn't change the warehouse or Airflow, and the warehouse's init and
+> backups would then fail to log in. To change the superuser's password later, run `ALTER ROLE <user> PASSWORD '...'`
+> as the superuser first, then update `.env`. `POSTGRES_AIRFLOW_PASSWORD` is the exception: it is applied on every start.
+
+### 2. Start the stack
 
 ```bash
 docker compose up -d
 ```
 
+The first start builds the images, creates the warehouse and sets up Airflow, so it takes a few minutes. Check that it
+went well:
+
+```bash
+docker compose ps -a
+```
+
+`omnis-database-init`, `omnis-storage-init` and `airflow-init` set things up and stop, so they must say `Exited (0)`.
+Every other service must be `Up` (and `healthy`, where it has a healthcheck). If one isn't,
+`docker compose logs <service>` says why. After fixing it, `docker compose up -d` again: every init is safe to rerun.
+
 | Service | URL | Login |
 |---|---|---|
 | Airflow UI | http://localhost:8080 | `_AIRFLOW_WWW_USER_USERNAME` / `_AIRFLOW_WWW_USER_PASSWORD` |
 | MinIO console | http://localhost:9001 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` |
-| PostgreSQL warehouse | `localhost:5432` | `POSTGRES_USER` / `POSTGRES_PASSWORD`, database `POSTGRES_DB` |
+| PostgreSQL warehouse | `localhost:5432`, database `POSTGRES_DB` | A login of your own, created in the next step |
 
-**3. Turn the flow on.** New flows start paused: in the Airflow UI, unpause the `health` DAG. It runs every hour.
+### 3. Create the logins of the warehouse
 
-**4. Try it.** Save this as `series_gimnasio_20261001120000.csv`:
+Nobody works with the warehouse's superuser: every person and every tool logs in with a login of their own, in one of
+the three groups the warehouse creates (see [Roles and logins](#roles-and-logins)). Since the warehouse records the login
+that last changed each row, a shared login would make that useless, and taking one person's access away would mean
+changing everyone's password.
+
+To start, create at least:
+
+| Login for | Group | What it can do |
+|---|---|---|
+| You, to maintain the warehouse | `database_admin` | Read and write the flows' tables, and change their structure |
+| Each person who follows the data | `database_user` | Read every schema of the flows, `raw` included |
+| Each dashboard or BI tool | `visualization` | Read `publish`, and nothing else |
+
+Open `psql` as the superuser:
+
+```bash
+docker compose exec omnis-database sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+Create each login in its group (these names are examples: use the person's or the tool's). `\password` asks for the
+password twice, without leaving it in any history:
+
+```sql
+CREATE ROLE alice LOGIN IN ROLE database_admin;
+\password alice
+
+CREATE ROLE bob LOGIN IN ROLE database_user;
+\password bob
+
+CREATE ROLE metabase LOGIN IN ROLE visualization;
+\password metabase
+
+\du
+```
+
+`\du` lists the logins and the group each one is in ("Member of"); `\q` leaves `psql`. A SQL client like DBeaver
+connects to `localhost`, port `POSTGRES_HOST_PORT`, database `POSTGRES_DB`, with one of these logins. To take a login's
+access away, `DROP ROLE bob;`. Write down which logins you created: they are not in the backups (step 6).
+
+### 4. Run the example flow
+
+The repo ships the flow `health`. New flows start paused, so in the Airflow UI, unpause the `health` DAG. From then on
+it runs every hour.
+
+Save this as `series_gimnasio_20261001120000.csv`:
 
 ```csv
 fecha,num,ejercicio,peso,reps,rir,rpe
@@ -84,17 +162,36 @@ fecha,num,ejercicio,peso,reps,rir,rpe
 2026-10-01,2,Curl de biceps con mancuerna,12,9,1,9
 ```
 
-Upload it in the MinIO console to your data bucket, under `raw/new/series_gimnasio/`. Then trigger `health` in Airflow
-(or wait for the next hour) and query the result:
+In the MinIO console, upload it to your data bucket (`MINIO_DATA_BUCKET`), under `raw/new/series_gimnasio/`. Then
+trigger `health` in Airflow (or wait for the next hour). When the run is green, query the result with your login:
 
 ```bash
-docker compose exec omnis-database sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT * FROM publish.series_gimnasio"'
+docker compose exec omnis-database sh -c 'psql -U alice -d "$POSTGRES_DB" -c "SELECT * FROM publish.series_gimnasio"'
 ```
 
 The file is now in `raw/his/series_gimnasio/`, so the next run won't load it again.
 
-To stop the stack, `docker compose down`. The warehouse and the bucket are kept in `omnis-database/data/` and
-`omnis-storage/minio_storage/`, so nothing is lost.
+### 5. Make it yours
+
+- **Write your own flow**: a new folder in `omnis-airflow/dags/`, described in [Anatomy of a flow](#anatomy-of-a-flow).
+  Copying `health/` and changing it is the quickest start. Airflow shows it within 5 minutes, paused, so unpause it
+  as in step 4.
+- **If you don't want `health`**, leave it paused or delete its folder. The tables it already created stay in the
+  warehouse until you drop them.
+- **Producers** drop their CSVs into `<data bucket>/raw/new/<entity>/`, with any S3 client or the MinIO console.
+
+### 6. Keep it safe
+
+- **Backups** of the warehouse and the bucket are made once a month, on their own (see [Backups](#backups)). They are
+  written to `omnis-database/backups/` and `omnis-storage/backups/`, on the same disk as the data, so copy those
+  folders somewhere else regularly: a backup on the same disk is lost with it. The logins are not in them, so keep the
+  list from step 3 to create them again.
+- **The ports are open to your network**: Compose publishes them on every interface of the machine, so anyone who can
+  reach it can try to log in to Airflow, MinIO and the warehouse. Keep strong passwords, and put a firewall in front if
+  the network isn't yours.
+- **Stopping** with `docker compose down` keeps everything: the warehouse and the bucket live in
+  `omnis-database/data/` and `omnis-storage/minio_storage/`. To update Omnis, `git pull` and then
+  `docker compose up -d --build`.
 
 ### Configuration
 
@@ -102,7 +199,8 @@ Everything is set in `.env`; [`.env.example`](.env.example) has every variable w
 
 | Variable | What it is |
 |---|---|
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | The warehouse database and its user. |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | The warehouse database and its superuser, which only its init, its backups and whoever creates logins use. |
+| `POSTGRES_AIRFLOW_PASSWORD` | Password of `omnis_airflow`, the role the flows use. Only Airflow needs it, so any random string. |
 | `POSTGRES_HOST_PORT` | Port of the warehouse on the host (`5432`). |
 | `AIRFLOW_UID` | User the Airflow containers run as. On Linux, the output of `id -u` (`1000`, the default, for the first user); elsewhere any value. |
 | `AIRFLOW_WEB_PORT` | Port of the Airflow UI (`8080`). |
@@ -155,7 +253,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 │   ├── config/                # airflow.cfg, generated on the first start
 │   ├── dags/<flow>/           # one folder per flow
 │   └── plugins/omnis/         # the engine, with its tests
-├── omnis-database/            # warehouse data, its backups and backup script
+├── omnis-database/            # warehouse data, its init (roles and permissions) with its tests, backups and backup script
 ├── omnis-storage/             # bucket data, its backups, init and backup scripts
 └── omnis-backup/              # image of the backup services
 ```
@@ -163,6 +261,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 | Service | What it does |
 |---|---|
 | `omnis-database` | PostgreSQL 16, the warehouse. The flows create every table they need. |
+| `omnis-database-init` | Sets up the roles of the warehouse, who owns and reads what (see [Roles and logins](#roles-and-logins)) and the [traceability](#traceability) of its tables, then exits. Airflow waits for it. |
 | `omnis-storage` | MinIO, the landing zone of the raw files. |
 | `omnis-storage-init` | Creates the data bucket if it doesn't exist, then exits. |
 | `airflow-*` | Airflow 3.1 (LocalExecutor), with its own metadata database. |
@@ -173,6 +272,58 @@ To run an Airflow CLI command: `docker compose --profile debug run --rm airflow-
 Airflow is configured in the compose files, with `AIRFLOW__<SECTION>__<KEY>` variables, so every machine runs it the
 same way. `omnis-airflow/config/airflow.cfg` is not in the repo: `airflow-init` generates it on the first start, with
 random secret keys of its own on every machine. Deleting it and restarting the stack generates new keys.
+
+### Roles and logins
+
+Nobody works with the warehouse's superuser (`POSTGRES_USER`). On every start, `omnis-database-init` sets up a role
+for the engine and three groups, and every person or tool logs in with a login of their own, member of one of them:
+
+| Role | Who uses it | What it can do |
+|---|---|---|
+| `omnis_airflow` | The flows, through Airflow (`POSTGRES_AIRFLOW_PASSWORD`) | Create the schemas of its flows, and own everything in them. |
+| `database_admin` | Whoever maintains the warehouse by hand | Whatever `omnis_airflow` can: read, write and change the structure of the flows' tables. |
+| `database_user` | Programmers following the data | Read every schema of the flows, `raw` included. |
+| `visualization` | Dashboards and BI tools | Read `publish`, and nothing else. |
+
+Everything created in the flows' schemas (every schema but `public`), by the engine or by an admin, becomes
+`omnis_airflow`'s as soon as it is created, and the groups can read it from then on. A login of each person, rather
+than one shared per group, is what lets the warehouse say who changed a row, and lets you take one person's access away
+without changing anyone else's password.
+
+How to create, use and remove a login is step 3 of the [Quickstart](#3-create-the-logins-of-the-warehouse).
+
+### Traceability
+
+Every table of the flows but those of `raw` (a copy of their files, which already says the file of each row) has three
+columns that the warehouse keeps itself, whoever writes:
+
+| Column | What it holds |
+|---|---|
+| `sys_fec_insert` | When the row was inserted (the start of its transaction). It never changes. |
+| `sys_fec_mod` | When it last changed. When inserted, the same as `sys_fec_insert`. |
+| `sys_blame` | Who last changed it: their login, followed by the detail they signed with, if any (`<login>:<detail>`). |
+
+A trigger fills them on every insert and update, whatever the statement sets them to, and skips an update that changes
+no other column, so a row loaded again keeps its dates and its author. A table gets them as soon as it is created, and
+rows it already had say `unknown`. `full_rebuild` tables are written again on every run, so their columns tell when and
+by whom the table was last rebuilt.
+
+The `orig` tables of `health` also keep `sys_source_file`, the raw file of the last load that changed each row. Their
+pipes write it, and since a merge doesn't rewrite a row that came back with the same values, the same row in another
+file keeps the file it was first loaded from.
+
+The engine signs what each task writes with its run, as in `omnis_airflow:health/scheduled__2026-11-08T10:00:00+00:00`.
+A person writing by hand is blamed with their login, and can add a detail, for one transaction or for the rest of the
+session:
+
+```sql
+SET LOCAL omnis.blame = 'fix of the dates of 2026-10';   -- inside a transaction, only for it
+SET omnis.blame = 'fix of the dates of 2026-10';         -- for the rest of the session
+```
+
+The detail is what the writer says, so it gives context but proves nothing; the login does, and `SET ROLE` doesn't change
+it. A `database_admin` can turn the trigger off, as the owner of the tables can, so that group is only for people trusted
+with it.
 
 ### Anatomy of a flow
 
@@ -233,9 +384,13 @@ pre_statement: ...       # optional SQL, run before writing
 post_statement: ...      # optional SQL, run after writing
 ```
 
-`full_rebuild` replaces the whole table (`DELETE` + `INSERT ... SELECT`); `merge` updates the rows whose key already
-exists and inserts the rest (`MERGE`), so the table keeps its history. A merge pipe must not return the same key twice
-nor a NULL key (use `DISTINCT ON` and filter NULLs): the engine checks it and fails the task.
+`full_rebuild` replaces the whole table (`DELETE` + `INSERT ... SELECT`); `merge` inserts the rows whose key is new and
+updates the loaded ones only when one of their values changed (`MERGE`), so the table keeps its history and a row loaded
+again is left as it was. Columns named `sys_*` (like `sys_source_file`) are written with the row but not compared: they
+never make a row change on their own. Since a merge compares each column of the pipe with the destination's, their types
+must be comparable: cast them in the pipe (an integer into a `TEXT` column fails), and use `jsonb` rather than `json`,
+which can't be compared. A merge pipe must not return the same key twice nor a NULL key (use `DISTINCT ON` and filter
+NULLs): the engine checks it and fails the task.
 
 **`raw_load`** lands every `.csv` directly under `source` (a prefix of the data bucket) into `destination`:
 
@@ -277,7 +432,9 @@ task types within one flow, can run on different engines.
 
 **Adding a task type** takes a `Task` subclass in `domain/tasks/`, its `TaskType` (which validates its YAML) in
 `adapters/task_type/`, its runner in `adapters/task_runner/`, and an entry in the `task_types` of each `<flow>.py`
-that uses it. No existing code changes.
+that uses it. No existing code changes. A runner gets the task and the run it belongs to (`RunContext`): if it writes
+rows to the warehouse, it signs its transaction with the run (`database.sign(context.blame)`), so each row says which
+run wrote it.
 
 The Airflow image adds what the engine imports, listed in `omnis-airflow/requirements.txt` (UTF-16 encoded). After
 changing it, rebuild with `docker compose build`.
@@ -311,6 +468,10 @@ version.)
   `<schema>.<table>.csv`.
 - Every test starts with a docstring saying what it checks and, if it fails, what is broken and why it matters.
 
+The warehouse has its own tests, of the SQL its init applies (roles, owners and permissions, traceability), in
+[`omnis-database/tests/`](omnis-database/tests). They run with the engine's, on a throwaway PostgreSQL too, and don't
+depend on the engine.
+
 ### Backups
 
 `omnis-database-backup` and `omnis-storage-backup` copy the warehouse (`pg_dump`) and the data bucket (`mc mirror`)
@@ -328,6 +489,10 @@ To restore one, with the stack running (`<copy>` is the folder name):
 docker compose exec omnis-database-backup sh -c 'pg_restore --clean --if-exists -d "$PGDATABASE" /backups/<copy>/"$PGDATABASE".dump'
 docker compose exec omnis-storage-backup sh -c 'mc mirror --overwrite /backups/<copy>/"$MINIO_DATA_BUCKET" local/"$MINIO_DATA_BUCKET"'
 ```
+
+A copy of the warehouse holds its tables and their permissions, but not the logins: they belong to the PostgreSQL
+server, not to the database. Restored into a new server, the engine's role and the groups are there (the init creates
+them on start), but the logins have to be created again.
 
 ## License
 

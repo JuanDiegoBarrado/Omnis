@@ -74,12 +74,37 @@ def test_copies_csv_into_the_columns_given(postgres, database):
     assert postgres.fetch("SELECT id, value FROM public.t ORDER BY id") == [(1, "a"), (2, "b, c"), (3, None)]
 
 
+def test_signs_only_the_transaction_it_is_signed_in(postgres, database):
+    """
+    Checks: after sign("..."), what the transaction writes sees the signature (a column whose
+    default is the setting the warehouse's traceability trigger reads, omnis.blame), and the next
+    transaction on the same database doesn't see it unless it signs too.
+
+    If it fails: rows would be written without the run that wrote them, or worse, signed with the
+    run of an earlier task, so the warehouse would blame the wrong run for them.
+    """
+    postgres.execute(
+        f"ALTER TABLE public.t ADD COLUMN blame TEXT DEFAULT current_setting('{PostgresDatabase.BLAME_SETTING}', true)"
+    )
+
+    with database as db:
+        db.sign("health/manual__1")
+        db.execute_sql("INSERT INTO public.t (id) VALUES (1)")
+    with database as db:
+        db.execute_sql("INSERT INTO public.t (id) VALUES (2)")
+
+    assert postgres.fetch("SELECT id, blame FROM public.t ORDER BY id") == [(1, "health/manual__1"), (2, None)]
+
+
 def test_cannot_be_used_outside_a_with_block(database):
     """
-    Checks: running SQL outside a `with database` block fails with a clear RuntimeError.
+    Checks: running SQL or signing outside a `with database` block fails with a clear RuntimeError.
 
     If it fails: code using the database without a transaction would fail with an obscure error, or
-    end up running outside the commit/rollback that keeps tasks atomic.
+    end up running outside the commit/rollback that keeps tasks atomic. A signature outside a
+    transaction would sign nothing, and the runner wouldn't know.
     """
     with pytest.raises(RuntimeError, match="within a 'with' block"):
         database.execute_sql("SELECT 1")
+    with pytest.raises(RuntimeError, match="within a 'with' block"):
+        database.sign("health/manual__1")

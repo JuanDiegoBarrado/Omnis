@@ -3,6 +3,7 @@ from psycopg2 import errors
 
 from omnis.adapters import PostgresDatabase, SqlDdlRunner
 from omnis.domain import DDL, Table
+from omnis.tests.fakes import RUN_CONTEXT
 
 pytestmark = pytest.mark.integration
 
@@ -12,7 +13,7 @@ ORIG_B = Table("orig.b", "CREATE SCHEMA IF NOT EXISTS orig; CREATE TABLE IF NOT 
 
 def run(postgres, *tables: Table) -> int:
     ddl = DDL(tables=tables, runner=SqlDdlRunner(PostgresDatabase(postgres.dsn)))
-    return ddl.runner.run(ddl)
+    return ddl.runner.run(ddl, RUN_CONTEXT)
 
 
 def tables_in(postgres, schema: str) -> list[str]:
@@ -50,3 +51,23 @@ def test_a_failing_ddl_applies_none(postgres):
         run(postgres, ORIG_A, broken)
 
     assert tables_in(postgres, "orig") == []
+
+
+def test_signs_the_rows_its_ddl_writes_with_its_run(postgres):
+    """
+    Checks: create_tables signs its transaction with its run (`<flow>/<run_id>`) before applying
+    any DDL, so a DDL that also writes rows (like a reference table that replaces its rows on every
+    run) writes them signed. Here the DDL inserts the signature it sees.
+
+    If it fails: the rows a reference table rewrites on every run would not say which run wrote
+    them, so their `sys_blame` in the warehouse would only say "omnis_airflow".
+    """
+    reference = Table(
+        "orig.reference",
+        "CREATE SCHEMA IF NOT EXISTS orig; CREATE TABLE IF NOT EXISTS orig.reference (blame TEXT);"
+        " DELETE FROM orig.reference; INSERT INTO orig.reference SELECT current_setting('omnis.blame', true);",
+    )
+
+    run(postgres, reference)
+
+    assert postgres.fetch("SELECT blame FROM orig.reference") == [(RUN_CONTEXT.blame,)]

@@ -9,8 +9,9 @@ x-airflow-common:
       POSTGRES_HOST: omnis-database
       POSTGRES_PORT: '5432'
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # The engine's own role, created by omnis-database-init, so the warehouse can tell what it writes
+      POSTGRES_USER: omnis_airflow
+      POSTGRES_PASSWORD: ${POSTGRES_AIRFLOW_PASSWORD}
       MINIO_ENDPOINT: omnis-storage:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -42,6 +43,8 @@ x-airflow-common:
         condition: service_healthy
       omnis-storage-init:
         condition: service_completed_successfully
+      omnis-database-init:
+        condition: service_completed_successfully
 
 services:
   omnis-database:
@@ -58,10 +61,32 @@ services:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-default_user}"]
       interval: 30m
       retries: 5
-      start_period: 10s
-      # Without it the first check would wait a whole interval
+      # A new warehouse first runs initdb, which takes longer than a few seconds (more on a Pi's SD
+      # card). Until it answers it is checked every start_interval, and it is healthy as soon as it
+      # does: with a short start period, a check that failed meanwhile would leave it waiting a whole
+      # interval, and Airflow with it (it waits for omnis-database-init, which waits for this)
+      start_period: 5m
       start_interval: 5s
     restart: unless-stopped
+
+  # Configures the warehouse on every start and exits (see its script): the engine's role
+  # (omnis_airflow), the groups people log in through, and who owns and reads what. Airflow waits for it
+  omnis-database-init:
+    image: postgres:16
+    environment:
+      # Read by psql: the superuser, which only this init, the backups and creating logins use
+      PGHOST: omnis-database
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_AIRFLOW_PASSWORD: ${POSTGRES_AIRFLOW_PASSWORD}
+    depends_on:
+      omnis-database:
+        condition: service_healthy
+    volumes:
+      - ./omnis-database/init:/init:ro
+    entrypoint: ["/bin/sh", "/init/postgres_init.sh"]
+    restart: no
 
   omnis-storage:
     image: quay.io/minio/minio:latest

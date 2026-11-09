@@ -1,0 +1,3 @@
+type: etl
+destination: publish.impacto_muscular
+pipe: publish.impacto_muscular

@@ -7,7 +7,10 @@
 --   - `tiempo` goes from HH:MM:SS to minutes.
 --   - The zone shares (por_z1..por_z5) are normalized to add up to 1. If all five are 0, they are NULL.
 --   - One row per (fecha, num). If the raw load has several rows with the same fecha and num (the
---     same session in two files, or twice in one), one of them is kept at random.
+--     same session in two files, or twice in one), one of them is kept at random, and so its file.
+--   - sys_source_file is the raw file the row comes from. The merge only rewrites a row whose values
+--     changed, so it keeps the file of the last load that changed the row: the same values in
+--     another file leave it as it was.
 SELECT DISTINCT ON (fecha, num)
     fecha,
     num,
@@ -22,7 +25,8 @@ SELECT DISTINCT ON (fecha, num)
     por_z2 / NULLIF(por_z1 + por_z2 + por_z3 + por_z4 + por_z5, 0) AS por_z2,
     por_z3 / NULLIF(por_z1 + por_z2 + por_z3 + por_z4 + por_z5, 0) AS por_z3,
     por_z4 / NULLIF(por_z1 + por_z2 + por_z3 + por_z4 + por_z5, 0) AS por_z4,
-    por_z5 / NULLIF(por_z1 + por_z2 + por_z3 + por_z4 + por_z5, 0) AS por_z5
+    por_z5 / NULLIF(por_z1 + por_z2 + por_z3 + por_z4 + por_z5, 0) AS por_z5,
+    sys_source_file
 FROM (
     SELECT
         CAST(raw.null_if_placeholder(fecha) AS DATE)                        AS fecha,
@@ -38,7 +42,8 @@ FROM (
         CAST(raw.null_if_placeholder(por_z2) AS FLOAT)                      AS por_z2,
         CAST(raw.null_if_placeholder(por_z3) AS FLOAT)                      AS por_z3,
         CAST(raw.null_if_placeholder(por_z4) AS FLOAT)                      AS por_z4,
-        CAST(raw.null_if_placeholder(por_z5) AS FLOAT)                      AS por_z5
+        CAST(raw.null_if_placeholder(por_z5) AS FLOAT)                      AS por_z5,
+        source_file                                                         AS sys_source_file
     FROM raw.sesiones_carrera
 ) typed
 WHERE fecha IS NOT NULL AND num IS NOT NULL AND categoria IS NOT NULL AND modalidad IS NOT NULL

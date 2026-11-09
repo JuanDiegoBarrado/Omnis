@@ -2,7 +2,7 @@ import csv
 import logging
 
 from omnis.adapters.task_runner.sql_identifiers import quote, quote_table
-from omnis.domain import RawLoad
+from omnis.domain import RawLoad, RunContext
 from omnis.ports import Database, DataSource, TaskRunner
 
 logger = logging.getLogger(__name__)
@@ -19,13 +19,16 @@ class SqlRawLoadRunner(TaskRunner[RawLoad]):
     Lands the CSV files of a raw load into a relational database (PostgreSQL syntax), reading
     them from `raw_files`: every CSV under its `source`. Each row gets the name of its file in
     RawLoad.FILE_COLUMN. Each load runs in a single transaction.
+
+    It doesn't sign its transaction: raw tables are landing tables, not traced (their rows already
+    say which file they came from).
     """
 
     def __init__(self, database: Database, raw_files: DataSource):
         self._database = database
         self._raw_files = raw_files
 
-    def run(self, task: RawLoad) -> int:
+    def run(self, task: RawLoad, context: RunContext) -> int:
         raw_load = task
         destination = quote_table(raw_load.destination)
         schema = quote(raw_load.destination.split(".", 1)[0])
