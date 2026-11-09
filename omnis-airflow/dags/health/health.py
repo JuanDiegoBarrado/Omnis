@@ -6,6 +6,8 @@ What runs and in which order is in graph.yaml, tasks/, tables/ and artifacts/ ne
 """
 from pathlib import Path
 
+from airflow.timetables.trigger import CronTriggerTimetable
+
 from omnis.adapters import (
     ArchiveTaskType,
     EmailNotifier,
@@ -50,7 +52,9 @@ flow = Flow(
 )
 
 dag = flow.build_airflow_dag(
-    schedule="0 * * * *",
+    # Once a day, at 14:00 in Madrid all year round (a plain cron string would be UTC, which moves
+    # with daylight saving time): the data comes in a few files a day, and fewer runs save CPU and writes
+    schedule=CronTriggerTimetable("0 14 * * *", timezone="Europe/Madrid"),
     # Two runs at once would share the raw tables: one run's raw load could replace them while the other processes them
     max_active_runs=1,
     # A failed run pauses the DAG, so no more runs start until someone looks at it and unpauses it
