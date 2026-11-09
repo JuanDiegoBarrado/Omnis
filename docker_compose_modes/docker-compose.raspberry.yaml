@@ -47,13 +47,14 @@ x-airflow-common:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
       AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
       AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
-      # Resources. LocalExecutor keeps up to `parallelism` worker processes in the scheduler, and a run
-      # of health never has more than a few tasks ready at once
-      AIRFLOW__CORE__PARALLELISM: '2'
+      # Resources. LocalExecutor keeps up to `parallelism` worker processes in the scheduler, each a
+      # whole Python process: with one, tasks run one after another, which only makes a daily run take
+      # a little longer
+      AIRFLOW__CORE__PARALLELISM: '1'
       # Each API server worker is a whole Python process, and one is enough for a single user
       AIRFLOW__API__WORKERS: '1'
       # A DAG file is parsed again every 5 min (not 30 s), in a single process: a change to a flow
-      # takes up to that long to show in the UI. Runs are hourly
+      # takes up to that long to show in the UI. Runs are daily
       AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES: '1'
       AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: '300'
       # The scheduler polls its database less often when there is nothing to do
@@ -77,7 +78,7 @@ services:
   omnis-database:
     image: postgres:16
     # The warehouse is small: a smaller cache, and few connections (one per running task, plus the user's)
-    command: postgres -c shared_buffers=64MB -c max_connections=20
+    command: postgres -c shared_buffers=32MB -c max_connections=20
     mem_limit: 512m
     logging: *default-logging
     ports:

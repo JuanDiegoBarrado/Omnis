@@ -23,7 +23,7 @@ published on a schedule.**
 
 Omnis is a small data platform you run on your own machine, from a laptop to a Raspberry Pi. Producers drop CSV
 files into a bucket; Omnis loads them into PostgreSQL, types and cleans them with SQL, and publishes tables ready to
-query from any SQL client or BI tool, every hour.
+query from any SQL client or BI tool, every day.
 
 It is a **generic engine**: a data flow is a folder of plain files (a task graph, task declarations, table
 definitions and SQL queries), and the engine turns it into an Airflow DAG. Adding or changing a flow needs no engine
@@ -152,7 +152,7 @@ access away, `DROP ROLE bob;`. Write down which logins you created: they are not
 ### 4. Run the example flow
 
 The repo ships the flow `health`. New flows start paused, so in the Airflow UI, unpause the `health` DAG. From then on
-it runs every hour.
+it runs every day at 03:00 UTC.
 
 Save this as `series_gimnasio_20261001120000.csv`:
 
@@ -163,7 +163,7 @@ fecha,num,ejercicio,peso,reps,rir,rpe
 ```
 
 In the MinIO console, upload it to your data bucket (`MINIO_DATA_BUCKET`), under `raw/new/series_gimnasio/`. Then
-trigger `health` in Airflow (or wait for the next hour). When the run is green, query the result with your login:
+trigger `health` in Airflow (the ▶ button of the DAG) instead of waiting for its daily run. When the run is green, query the result with your login:
 
 ```bash
 docker compose exec omnis-database sh -c 'psql -U alice -d "$POSTGRES_DB" -c "SELECT * FROM publish.series_gimnasio"'

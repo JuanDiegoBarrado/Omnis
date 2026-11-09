@@ -50,7 +50,8 @@ flow = Flow(
 )
 
 dag = flow.build_airflow_dag(
-    schedule="0 * * * *",
+    # Once a day, at 03:00 UTC: the data comes in a few files a day, and fewer runs save CPU and writes
+    schedule="0 3 * * *",
     # Two runs at once would share the raw tables: one run's raw load could replace them while the other processes them
     max_active_runs=1,
     # A failed run pauses the DAG, so no more runs start until someone looks at it and unpauses it
