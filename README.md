@@ -7,7 +7,6 @@ published on a schedule.**
 
 [![Apache Airflow](https://img.shields.io/badge/Apache%20Airflow-3.1-017CEE?logo=apacheairflow&logoColor=white)](https://airflow.apache.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![MinIO](https://img.shields.io/badge/MinIO-S3%20storage-C72E49?logo=minio&logoColor=white)](https://min.io/)
 [![Docker Compose](https://img.shields.io/badge/Docker%20Compose-one%20command-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi%205-supported-A22846?logo=raspberrypi&logoColor=white)](#raspberry-pi)
@@ -21,8 +20,8 @@ published on a schedule.**
 
 ## What it is
 
-Omnis is a small data platform you run on your own machine, from a laptop to a Raspberry Pi. Producers drop CSV
-files into a bucket; Omnis loads them into PostgreSQL, types and cleans them with SQL, and publishes tables ready to
+Omnis is a small data platform you run on your own machine, from a laptop to a Raspberry Pi. Producers deliver CSV
+files to it over HTTP; Omnis loads them into PostgreSQL, types and cleans them with SQL, and publishes tables ready to
 query from any SQL client or BI tool, every day.
 
 It is a **generic engine**: a data flow is a folder of plain files (a task graph, task declarations, table
@@ -31,12 +30,12 @@ code.
 
 ```mermaid
 flowchart LR
-    P[Producers] -->|CSV| N[(MinIO<br/>raw/new/)]
+    P[Producers] -->|CSV over HTTP| N[(omnis-storage<br/>raw/new/)]
     N -->|raw_load| R[raw<br/>text as it came]
     R -->|etl · merge| O[orig<br/>typed, keeps history]
     O -->|etl · full_rebuild| C[clean]
     C -->|etl · full_rebuild| PB[publish]
-    O -.->|archive| H[(MinIO<br/>raw/his/)]
+    O -.->|archive| H[(omnis-storage<br/>raw/his/)]
 ```
 
 - **All processing is SQL**, in the warehouse: each transformation is one `SELECT`, written by the engine with a full
@@ -56,7 +55,7 @@ loaded and its backups kept safe. Follow them in order: some settings are only r
 
 - [Docker](https://docs.docker.com/get-docker/) with Compose v2, and at least 4 GB of memory, 2 CPUs and 10 GB of disk
   for it (`airflow-init` warns on start if it has less).
-- Free ports on the machine: `5432` (warehouse), `8080` (Airflow), `9000` and `9001` (MinIO). Any of them can be
+- Free ports on the machine: `5432` (warehouse), `8080` (Airflow) and `9000` (storage, where producers deliver files). Any of them can be
   changed in `.env`.
 - On a **Raspberry Pi**, read [Raspberry Pi](#raspberry-pi) first: it needs a kernel setting, and every
   `docker compose` command below runs with its mode file instead.
@@ -73,7 +72,10 @@ Edit `.env` (it is gitignored, so your passwords stay on your machine). Every va
 [Configuration](#configuration); these are the ones to look at:
 
 - **Every `change-me`**: a different random password for each, for example the output of `openssl rand -hex 16`. Stick
-  to letters and digits: Compose reads a `$` in `.env` as the start of a variable. MinIO's needs 8 characters or more.
+  to letters and digits: Compose reads a `$` in `.env` as the start of a variable.
+- **`STORAGE_USERS`**: who can deliver files, as `name:password` pairs separated by commas. One user for you is
+  enough to start; add one per producer, or share one among several, as you prefer (see
+  [Delivering files](#delivering-files)).
 - **`AIRFLOW_UID`**, on Linux only: the output of `id -u`, so the logs Airflow writes belong to you.
 - **The ports**, if any of the defaults is taken.
 - **The failure alerts** (`ALERT_EMAIL` and `SMTP_*`). They are optional but strongly recommended: `health` pauses
@@ -98,14 +100,14 @@ went well:
 docker compose ps -a
 ```
 
-`omnis-database-init`, `omnis-storage-init` and `airflow-init` set things up and stop, so they must say `Exited (0)`.
+`omnis-database-init` and `airflow-init` set things up and stop, so they must say `Exited (0)`.
 Every other service must be `Up` (and `healthy`, where it has a healthcheck). If one isn't,
 `docker compose logs <service>` says why. After fixing it, `docker compose up -d` again: every init is safe to rerun.
 
 | Service | URL | Login |
 |---|---|---|
 | Airflow UI | http://localhost:8080 | `_AIRFLOW_WWW_USER_USERNAME` / `_AIRFLOW_WWW_USER_PASSWORD` |
-| MinIO console | http://localhost:9001 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` |
+| Storage (file delivery) | http://localhost:9000 | A user of `STORAGE_USERS` |
 | PostgreSQL warehouse | `localhost:5432`, database `POSTGRES_DB` | A login of your own, created in the next step |
 
 ### 3. Create the logins of the warehouse
@@ -162,8 +164,14 @@ fecha,num,ejercicio,peso,reps,rir,rpe
 2026-10-01,2,Curl de biceps con mancuerna,12,9,1,9
 ```
 
-In the MinIO console, upload it to your data bucket (`MINIO_DATA_BUCKET`), under `raw/new/series_gimnasio/`. Then
-trigger `health` in Airflow (the ▶ button of the DAG) instead of waiting for its daily run. When the run is green, query the result with your login:
+Deliver it to the storage as the entity `series_gimnasio`, with your user of `STORAGE_USERS`:
+
+```bash
+curl -u producer:<password> --data-binary @series_gimnasio_20261001120000.csv http://localhost:9000/raw/series_gimnasio
+```
+
+It answers where it kept the file, under `raw/new/series_gimnasio/`. Then trigger `health` in Airflow (the ▶ button
+of the DAG) instead of waiting for its daily run. When the run is green, query the result with your login:
 
 ```bash
 docker compose exec omnis-database sh -c 'psql -U alice -d "$POSTGRES_DB" -c "SELECT * FROM publish.series_gimnasio"'
@@ -178,19 +186,19 @@ The file is now in `raw/his/series_gimnasio/`, so the next run won't load it aga
   as in step 4.
 - **If you don't want `health`**, leave it paused or delete its folder. The tables it already created stay in the
   warehouse until you drop them.
-- **Producers** drop their CSVs into `<data bucket>/raw/new/<entity>/`, with any S3 client or the MinIO console.
+- **Producers** deliver their CSVs to the storage, one request per file (see [Delivering files](#delivering-files)).
 
 ### 6. Keep it safe
 
-- **Backups** of the warehouse and the bucket are made once a month, on their own (see [Backups](#backups)). They are
+- **Backups** of the warehouse and the raw files are made once a month, on their own (see [Backups](#backups)). They are
   written to `omnis-database/backups/` and `omnis-storage/backups/`, on the same disk as the data, so copy those
   folders somewhere else regularly: a backup on the same disk is lost with it. The logins are not in them, so keep the
   list from step 3 to create them again.
 - **The ports are open to your network**: Compose publishes them on every interface of the machine, so anyone who can
-  reach it can try to log in to Airflow, MinIO and the warehouse. Keep strong passwords, and put a firewall in front if
+  reach it can try to log in to Airflow, the storage and the warehouse. Keep strong passwords, and put a firewall in front if
   the network isn't yours.
-- **Stopping** with `docker compose down` keeps everything: the warehouse and the bucket live in
-  `omnis-database/data/` and `omnis-storage/minio_storage/`. To update Omnis, `git pull` and then
+- **Stopping** with `docker compose down` keeps everything: the warehouse and the raw files live in
+  `omnis-database/data/` and `omnis-storage/data/`. To update Omnis, `git pull` and then
   `docker compose up -d --build`.
 
 ### Configuration
@@ -205,9 +213,8 @@ Everything is set in `.env`; [`.env.example`](.env.example) has every variable w
 | `AIRFLOW_UID` | User the Airflow containers run as. On Linux, the output of `id -u` (`1000`, the default, for the first user); elsewhere any value. |
 | `AIRFLOW_WEB_PORT` | Port of the Airflow UI (`8080`). |
 | `_AIRFLOW_WWW_USER_USERNAME`, `_AIRFLOW_WWW_USER_PASSWORD` | Admin user of the Airflow UI, created on the first start. |
-| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | MinIO's root user (password of 8+ characters), also used by the flows. |
-| `MINIO_API_PORT`, `MINIO_WEB_UI_PORT` | Ports of the S3 API (`9000`) and of the MinIO console (`9001`). |
-| `MINIO_DATA_BUCKET` | Bucket where producers drop the raw files. Created on start if missing. |
+| `STORAGE_USERS` | Who can deliver files to the storage: `name:password` pairs separated by commas. |
+| `STORAGE_PORT` | Port of the storage on the host (`9000`), where producers deliver the files. |
 | `ALERT_EMAIL` | Who gets an e-mail when a run or a backup fails. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | SMTP server the alerts are sent through, as `SMTP_USER`. |
 
@@ -254,7 +261,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 │   ├── dags/<flow>/           # one folder per flow
 │   └── plugins/omnis/         # the engine, with its tests
 ├── omnis-database/            # warehouse data, its init (roles and permissions) with its tests, backups and backup script
-├── omnis-storage/             # bucket data, its backups, init and backup scripts
+├── omnis-storage/             # the raw files (data/), the server producers deliver them to with its tests, backups and backup script
 └── omnis-backup/              # image of the backup services
 ```
 
@@ -262,8 +269,7 @@ of `/boot/firmware/cmdline.txt` and reboot. `docker stats` shows what each conta
 |---|---|
 | `omnis-database` | PostgreSQL 16, the warehouse. The flows create every table they need. |
 | `omnis-database-init` | Sets up the roles of the warehouse, who owns and reads what (see [Roles and logins](#roles-and-logins)) and the [traceability](#traceability) of its tables, then exits. Airflow waits for it. |
-| `omnis-storage` | MinIO, the landing zone of the raw files. |
-| `omnis-storage-init` | Creates the data bucket if it doesn't exist, then exits. |
+| `omnis-storage` | The landing zone of the raw files: producers deliver them over HTTP, and it keeps them in `omnis-storage/data/`, where the flows read them (see [Delivering files](#delivering-files)). |
 | `airflow-*` | Airflow 3.1 (LocalExecutor), with its own metadata database. |
 | `omnis-database-backup`, `omnis-storage-backup` | Monthly backups (see [Backups](#backups)). |
 
@@ -291,6 +297,32 @@ than one shared per group, is what lets the warehouse say who changed a row, and
 without changing anyone else's password.
 
 How to create, use and remove a login is step 3 of the [Quickstart](#3-create-the-logins-of-the-warehouse).
+
+### Delivering files
+
+`omnis-storage` is where producers deliver the raw files, one HTTP request per file, with a user of `STORAGE_USERS`:
+
+```bash
+curl -u <user>:<password> --data-binary @<file>.csv http://<host>:9000/raw/<entity>
+# 201 {"file": "raw/new/<entity>/<entity>_20261109140512.csv"}
+```
+
+It keeps each file in `omnis-storage/data/raw/new/<entity>/`, which is where the raw load of that entity reads
+(its `source`), and the archive moves it to `raw/his/<entity>/` once loaded.
+
+- **The storage names the file** `<entity>_<YYYYMMDDHHMMSS>.csv` (UTC), so a producer can't overwrite another's
+  file, and two files of the same second get `_2`, `_3`... The entity is lowercase letters, digits and `_`.
+- **A file appears only when it is complete**: it is written aside and moved into place at the end, so a run never
+  loads half a file.
+- **It rejects what would break a run**: an empty file, one that isn't UTF-8 or one over 50 MB is answered `400` or
+  `413` and not kept. A wrong user or password is `401`. Whether its columns are right is checked by the raw load.
+- **Users are yours to choose**: `STORAGE_USERS` is `name:password` pairs separated by commas (no comma in a
+  password). One per producer lets you take one away without touching the others; several producers can share one.
+  The name shows in the storage's log, with every file delivered. Changes apply on the next `docker compose up -d`.
+
+Copying files straight into `omnis-storage/data/raw/new/<entity>/` on the machine also works, since the flows only
+read the folder, but then nothing checks or names them, and a run could read a file still being copied: deliver them
+through the storage, or use `rsync`, which writes aside and renames at the end too.
 
 ### Traceability
 
@@ -338,7 +370,7 @@ omnis-airflow/dags/<flow>/
 └── artifacts/pipes/<pipe>.sql # one SELECT per ETL
 ```
 
-- **`<flow>.py`** builds the flow and its Airflow DAG: the adapters it runs on (warehouse, bucket, alerts), the task
+- **`<flow>.py`** builds the flow and its Airflow DAG: the adapters it runs on (warehouse, raw files, alerts), the task
   types it allows and the Airflow settings (`schedule`, `tags`...). Copy [`health.py`](omnis-airflow/dags/health/health.py)
   and change the flow name. Keep the words "airflow" and "dag" in its docstring: Airflow skips files without them.
 - **`graph.yaml`** only says which task precedes which:
@@ -367,8 +399,8 @@ later changes to its files show within 30 seconds (5 minutes in the Raspberry Pi
 runs one task per node of the graph, in its order. Before any of that, the engine checks the flow: the graph and the
 task files must match, every table must have exactly one writer, and every table a task writes must be created once
 (by its DDL or by its raw load). A flow that breaks a rule, or a YAML that doesn't validate, shows up in Airflow as a
-DAG import error saying why, and never runs. No other code or service changes; new raw files go to
-`<data bucket>/raw/new/<entity>/`.
+DAG import error saying why, and never runs. No other code or service changes; producers deliver its raw files as
+[any other](#delivering-files).
 
 ### Task types
 
@@ -392,7 +424,7 @@ must be comparable: cast them in the pipe (an integer into a `TEXT` column fails
 which can't be compared. A merge pipe must not return the same key twice nor a NULL key (use `DISTINCT ON` and filter
 NULLs): the engine checks it and fails the task.
 
-**`raw_load`** lands every `.csv` directly under `source` (a prefix of the data bucket) into `destination`:
+**`raw_load`** lands every `.csv` directly under `source` (a folder of the storage) into `destination`:
 
 ```yaml
 type: raw_load
@@ -454,7 +486,7 @@ The engine's tests live inside the package, in
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install "apache-airflow==3.1.0" --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.1.0/constraints-3.11.txt"
-.venv/Scripts/pip install boto3 psycopg2-binary pytest "testcontainers[postgres,minio]"
+.venv/Scripts/pip install boto3 psycopg2-binary pytest "testcontainers[postgres]" "moto[server]"
 .venv/Scripts/python -m pytest
 ```
 
@@ -462,8 +494,9 @@ python -m venv .venv
 version.)
 
 - Domain and port tests use the in-memory doubles of `tests/fakes.py`.
-- Adapters that talk to PostgreSQL or S3 are tested against throwaway containers of the same images as the stack, so
-  they need Docker. `-m "not integration"` skips them.
+- Adapters that talk to PostgreSQL are tested against throwaway containers of the same image as the stack, so they
+  need Docker. `-m "not integration"` skips them. The S3 adapter, which the stack doesn't use, is tested against
+  [moto](https://github.com/getmoto/moto), an S3 served in the same process.
 - Test data lives next to each test module, in a folder of its name: each case has `given/` and `expected/` tables as
   `<schema>.<table>.csv`.
 - Every test starts with a docstring saying what it checks and, if it fails, what is broken and why it matters.
@@ -474,7 +507,7 @@ depend on the engine.
 
 ### Backups
 
-`omnis-database-backup` and `omnis-storage-backup` copy the warehouse (`pg_dump`) and the data bucket (`mc mirror`)
+`omnis-database-backup` and `omnis-storage-backup` copy the warehouse (`pg_dump`) and the raw files (`omnis-storage/data/raw/`)
 once a month, into `omnis-database/backups/<YYYYMMDDHHMMSS>/` and `omnis-storage/backups/<YYYYMMDDHHMMSS>/` (UTC).
 Both run on the image of `omnis-backup/`. Every hour they check whether this month already has a copy, so they make it
 at the start of the month, or as soon as the stack starts if it was down then. Old copies are never deleted.
@@ -487,7 +520,12 @@ To restore one, with the stack running (`<copy>` is the folder name):
 
 ```bash
 docker compose exec omnis-database-backup sh -c 'pg_restore --clean --if-exists -d "$PGDATABASE" /backups/<copy>/"$PGDATABASE".dump'
-docker compose exec omnis-storage-backup sh -c 'mc mirror --overwrite /backups/<copy>/"$MINIO_DATA_BUCKET" local/"$MINIO_DATA_BUCKET"'
+```
+
+The raw files are copied as they are, so restoring them is copying the folder back, from the repo root:
+
+```bash
+cp -r omnis-storage/backups/<copy>/raw omnis-storage/data/
 ```
 
 A copy of the warehouse holds its tables and their permissions, but not the logins: they belong to the PostgreSQL

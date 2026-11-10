@@ -6,11 +6,10 @@ import pytest
 
 from omnis.tests.postgres_helper import PostgresHelper
 
-# The same images as the stack, so the adapters are tested against what they run on
+# The same image as the stack, so the adapters are tested against what they run on
 POSTGRES_IMAGE = "postgres:16"
-MINIO_IMAGE = "quay.io/minio/minio:latest"
 
-# The tests that use the fixtures below are marked `integration` in their module (pytestmark)
+# The tests that use the Postgres fixtures below are marked `integration` in their module (pytestmark)
 
 
 @pytest.fixture(scope="session")
@@ -37,23 +36,29 @@ def postgres(postgres_server) -> PostgresHelper:
 
 
 @pytest.fixture(scope="session")
-def minio_server() -> dict:
-    """A throwaway MinIO for the whole session: the arguments of an S3 client for it."""
-    from testcontainers.minio import MinioContainer
+def s3_server() -> dict:
+    """
+    A throwaway S3 for the whole session, served over HTTP in this process by moto: the arguments of
+    an S3 client for it. The stack has no S3 (its landing zone is a folder), so S3DataSource is
+    tested against moto rather than a container of a server that could stop being published.
+    """
+    from moto.server import ThreadedMotoServer
 
-    with MinioContainer(MINIO_IMAGE) as container:
-        config = container.get_config()
-        yield {
-            "service_name": "s3",
-            "endpoint_url": f"http://{config['endpoint']}",
-            "aws_access_key_id": config["access_key"],
-            "aws_secret_access_key": config["secret_key"],
-        }
+    server = ThreadedMotoServer(ip_address="127.0.0.1", port=0)
+    server.start()
+    host, port = server.get_host_and_port()
+    yield {
+        "service_name": "s3",
+        "endpoint_url": f"http://{host}:{port}",
+        "aws_access_key_id": "testing",
+        "aws_secret_access_key": "testing",
+    }
+    server.stop()
 
 
 @pytest.fixture
-def s3_bucket(minio_server) -> tuple[dict, str]:
+def s3_bucket(s3_server) -> tuple[dict, str]:
     """An empty bucket of its own for one test: the client arguments and the bucket name."""
     bucket = f"test-{uuid4().hex[:12]}"
-    boto3.client(**minio_server).create_bucket(Bucket=bucket)
-    return minio_server, bucket
+    boto3.client(**s3_server).create_bucket(Bucket=bucket)
+    return s3_server, bucket

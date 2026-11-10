@@ -13,11 +13,11 @@ CLAUDE.md
 omnis-database/data
 omnis-database/backups
 
-# Omnis storage
-omnis-storage/*
-!omnis-storage/init
-!omnis-storage/scripts
-!omnis-storage/readme.txt
+# Omnis storage: the raw files and their backups (data/ exists on clone, owned by whoever cloned)
+omnis-storage/backups
+omnis-storage/minio_storage
+omnis-storage/data/*
+!omnis-storage/data/.gitkeep
 
 # Omnis airflow
 omnis-airflow/logs

@@ -8,10 +8,7 @@ ENVIRONMENT = {
     "POSTGRES_HOST": "omnis-database",
     "POSTGRES_PORT": "5432",
     "POSTGRES_DB": "warehouse",
-    "MINIO_ENDPOINT": "omnis-storage:9000",
-    "MINIO_ROOT_USER": "minio",
-    "MINIO_ROOT_PASSWORD": "secret",
-    "MINIO_DATA_BUCKET": "data",
+    "STORAGE_DATA_DIR": "/opt/airflow/data",
 }
 
 # Optional: without all of them but SMTP_PORT, nobody is notified
@@ -35,19 +32,16 @@ def environment(monkeypatch):
 
 def test_builds_the_config_from_the_environment(environment):
     """
-    Checks: the env vars the compose passes to Airflow become the Postgres connection string, the
-    S3 client settings and the data bucket. A password with URL characters (@ : /) is escaped.
+    Checks: the env vars the compose passes to Airflow become the Postgres connection string and the
+    folder of the landing zone. A password with URL characters (@ : /) is escaped.
 
-    If it fails: the DAGs would connect to the wrong database or bucket, or fail to connect at all
-    when the password has special characters.
+    If it fails: the DAGs would connect to the wrong database or read the raw files from the wrong
+    folder, or fail to connect at all when the password has special characters.
     """
     config = load_environment_config()
 
     assert config.db_conn == "postgresql://omnis:p%40ss%3A%2Fword@omnis-database:5432/warehouse"
-    assert config.storage_config.endpoint_url == "http://omnis-storage:9000"
-    assert config.storage_config.aws_access_key_id == "minio"
-    assert config.storage_config.aws_secret_access_key == "secret"
-    assert config.data_bucket_name == "data"
+    assert config.storage_data_dir == "/opt/airflow/data"
 
 
 @pytest.mark.parametrize("name", sorted(ENVIRONMENT))

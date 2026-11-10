@@ -1,3 +1,3 @@
-from .config import EmailConfig, EnvironmentConfig, StorageConfig
+from .config import EmailConfig, EnvironmentConfig
 
-__all__ = ["EmailConfig", "EnvironmentConfig", "StorageConfig"]
+__all__ = ["EmailConfig", "EnvironmentConfig"]

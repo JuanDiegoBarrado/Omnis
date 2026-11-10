@@ -28,10 +28,8 @@ x-airflow-common:
       # The engine's own role, created by omnis-database-init, so the warehouse can tell what it writes
       POSTGRES_USER: omnis_airflow
       POSTGRES_PASSWORD: ${POSTGRES_AIRFLOW_PASSWORD}
-      MINIO_ENDPOINT: omnis-storage:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+      # The landing zone of omnis-storage, mounted below: the raw loads read it and the archives move its files
+      STORAGE_DATA_DIR: /opt/airflow/data
       # Failure e-mails (omnis.config_helper): off unless all of them but SMTP_PORT are set
       ALERT_EMAIL: ${ALERT_EMAIL:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -64,13 +62,12 @@ x-airflow-common:
       - ./omnis-airflow/logs:/opt/airflow/logs
       - ./omnis-airflow/config:/opt/airflow/config
       - ./omnis-airflow/plugins:/opt/airflow/plugins
+      - ./omnis-storage/data:/opt/airflow/data
     user: "${AIRFLOW_UID:-1000}:0"
     depends_on:
       &airflow-common-depends-on
       airflow-postgres:
         condition: service_healthy
-      omnis-storage-init:
-        condition: service_completed_successfully
       omnis-database-init:
         condition: service_completed_successfully
 
@@ -120,44 +117,34 @@ services:
     entrypoint: ["/bin/sh", "/init/postgres_init.sh"]
     restart: no
 
+  # The landing zone of the raw files: producers deliver them over HTTP (see its server), and it keeps
+  # them in omnis-storage/data/raw/new/, which Airflow reads. It runs as AIRFLOW_UID, so Airflow can
+  # archive the files it writes
   omnis-storage:
-    image: quay.io/minio/minio:latest
-    command: server /data --console-address ":9001"
-    mem_limit: 512m
+    image: python:3.12-alpine
+    command: ["python", "/server/storage_server.py"]
+    user: "${AIRFLOW_UID:-1000}:0"
+    # One Python process with the standard library only: it stays far below this
+    mem_limit: 64m
     logging: *default-logging
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      # MinIO is written in Go, whose memory grows until it nears this limit before collecting garbage
-      GOMEMLIMIT: 384MiB
+      # Who can deliver files: name:password pairs separated by commas
+      STORAGE_USERS: ${STORAGE_USERS}
+      STORAGE_DATA_DIR: /data
+      PYTHONDONTWRITEBYTECODE: '1'
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_WEB_UI_PORT:-9001}:9001"
+      - "${STORAGE_PORT:-9000}:9000"
     volumes:
-      - ./omnis-storage/minio_storage:/data
+      - ./omnis-storage/server:/server:ro
+      - ./omnis-storage/data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
       interval: 30m
       retries: 5
       start_period: 10s
-      # omnis-storage-init waits for it to be healthy, so without this it would wait 30 min
+      # Until it answers it is checked every start_interval, so it shows healthy within seconds
       start_interval: 5s
     restart: unless-stopped
-
-  omnis-storage-init:
-    image: quay.io/minio/mc:latest
-    environment:
-      MINIO_ENDPOINT: omnis-storage:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
-    depends_on:
-      omnis-storage:
-        condition: service_healthy
-    volumes:
-      - ./omnis-storage:/storage
-    entrypoint: ["/bin/sh", "/storage/init/minio_init.sh"]
-    restart: no
 
   # Monthly backups (see each script): one folder per copy, named YYYYMMDDHHMMSS (UTC), in the
   # backups/ folder of the service it copies. A failed copy is e-mailed and not retried
@@ -191,23 +178,18 @@ services:
     mem_limit: 128m
     logging: *default-logging
     environment:
-      MINIO_ENDPOINT: omnis-storage:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
       # Failure e-mails (omnis-backup/notify_failure.py): off unless all of them but SMTP_PORT are set
       ALERT_EMAIL: ${ALERT_EMAIL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-    depends_on:
-      omnis-storage-init:
-        condition: service_completed_successfully
     volumes:
       - ./omnis-storage/scripts:/scripts:ro
+      # Read only: a backup never changes the files it copies
+      - ./omnis-storage/data:/data:ro
       - ./omnis-storage/backups:/backups
-    entrypoint: ["/bin/sh", "/scripts/minio_backup.sh"]
+    entrypoint: ["/bin/sh", "/scripts/storage_backup.sh"]
     restart: unless-stopped
 
   airflow-postgres:

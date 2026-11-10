@@ -1,7 +1,7 @@
 # Health flow: gym series and running sessions. Its DAG (schedule, tags...) is health.py.
 # Only which task precedes which: each node is defined in tasks/<node>.yaml.
 nodes:
-  # Raw: files dropped by the producers in the data bucket, landed as text
+  # Raw: files the producers delivered to omnis-storage, landed as text
   raw.series_gimnasio:
   raw.sesiones_carrera:
 
