@@ -43,7 +43,7 @@ class S3Storage:
         }
 
 
-@pytest.fixture(params=["local", pytest.param("s3", marks=pytest.mark.integration)])
+@pytest.fixture(params=["local", "s3"])
 def storage(request, tmp_path):
     if request.param == "local":
         return LocalStorage(tmp_path)

@@ -15,7 +15,6 @@ from omnis.adapters import (
     LocalDataSource,
     PostgresDatabase,
     RawLoadTaskType,
-    S3DataSource,
     SqlArchiveRunner,
     SqlDdlRunner,
     SqlEtlRunner,
@@ -33,7 +32,7 @@ from omnis.ports import PipeRepository, TableRepository, TaskDependenciesReposit
 env = load_environment_config()
 
 artifacts = LocalDataSource(Path(__file__).parent)
-raw_files = S3DataSource(**env.storage_config.model_dump(), bucket=env.data_bucket_name)
+raw_files = LocalDataSource(env.storage_data_dir)
 warehouse = PostgresDatabase(env.db_conn)
 notifier = EmailNotifier(**env.email.model_dump()) if env.email is not None else None
 

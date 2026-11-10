@@ -10,9 +10,12 @@ class LocalDataSource(FileDataSource):
         self._root = Path(root)
 
     def list_files(self, prefix: str) -> list[str]:
-        if not self._root.exists():
+        # Only the folder the prefix is in is walked, not the whole root: in the landing zone that
+        # would be every file ever archived (raw/his), on every raw load
+        start = self._root / prefix.rpartition("/")[0]
+        if not start.is_dir():
             return []
-        paths = (p.relative_to(self._root).as_posix() for p in self._root.rglob("*") if p.is_file())
+        paths = (p.relative_to(self._root).as_posix() for p in start.rglob("*") if p.is_file())
         return sorted(p for p in paths if p.startswith(prefix))
 
     def exists(self, path: str) -> bool:
