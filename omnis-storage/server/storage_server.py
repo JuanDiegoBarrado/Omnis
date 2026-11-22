@@ -5,7 +5,12 @@ loads of the flows read it and the archives move it from.
 
     POST /raw/<entity>   the body is the CSV. HTTP Basic auth, with a user of STORAGE_USERS
                          201 {"file": "raw/new/<entity>/<name>.csv"}
+    POST /temp/<kind>    the body is an Excel (.xlsx), kept as <data>/temp/<kind>/<kind>_<YYYYMMDDHHMMSS>.xlsx.
+                         Same auth. 201 {"file": "temp/<kind>/<name>.xlsx"}
     GET  /health         no auth, for the healthcheck
+
+- temp/ is a stopgap, to upload the gym's Excels until they have a proper way in: no flow reads it,
+  and the monthly backup doesn't copy it (it only copies raw/).
 
 - The server names the file, so a producer can't overwrite another's or write outside its entity's
   folder. Two files of the same entity in the same second get a suffix (`_2`, `_3`...).
@@ -38,6 +43,9 @@ PORT = 9000
 MAX_FILE_BYTES = 50 * 1024 * 1024
 ENTITY = re.compile(r"[a-z0-9_]+")
 NEW_FILES = Path("raw", "new")
+TEMP_FILES = Path("temp")
+# An .xlsx is a zip file, and every zip file starts with these bytes
+XLSX_SIGNATURE = b"PK\x03\x04"
 INCOMING = ".incoming"
 
 logger = logging.getLogger("omnis-storage")
@@ -61,7 +69,7 @@ def _timestamp() -> str:
 
 
 class Storage:
-    """Where the delivered files are kept: <root>/raw/new/<entity>/."""
+    """Where the delivered files are kept: <root>/raw/new/<entity>/, and the Excels in <root>/temp/<kind>/."""
 
     def __init__(self, root: Path):
         self.root = root
@@ -71,21 +79,21 @@ class Storage:
         # Choosing a free name and renaming into it must not interleave between two requests
         self._naming = threading.Lock()
 
-    def keep(self, entity: str, content: bytes) -> str:
-        """Keep a delivered file of `entity`, and return its path relative to the root."""
+    def keep(self, entity: str, content: bytes, location: Path = NEW_FILES, extension: str = "csv") -> str:
+        """Keep a delivered file of `entity` in <root>/<location>/<entity>/, and return its path relative to the root."""
         partial = self._incoming / f"{uuid.uuid4().hex}.part"
         with open(partial, "wb") as file:
             file.write(content)
             file.flush()
             os.fsync(file.fileno())
-        folder = self.root / NEW_FILES / entity
+        folder = self.root / location / entity
         folder.mkdir(parents=True, exist_ok=True)
         with self._naming:
             stem = f"{entity}_{_timestamp()}"
-            target, copy = folder / f"{stem}.csv", 1
+            target, copy = folder / f"{stem}.{extension}", 1
             while target.exists():
                 copy += 1
-                target = folder / f"{stem}_{copy}.csv"
+                target = folder / f"{stem}_{copy}.{extension}"
             os.replace(partial, target)
         return target.relative_to(self.root).as_posix()
 
@@ -102,8 +110,8 @@ def make_handler(storage: Storage, users: dict[str, str]) -> type[BaseHTTPReques
 
         def do_POST(self):
             parts = self.path.strip("/").split("/")
-            if len(parts) != 2 or parts[0] != "raw":
-                return self._reply(404, {"error": "not found: deliver files with POST /raw/<entity>"})
+            if len(parts) != 2 or parts[0] not in ("raw", "temp"):
+                return self._reply(404, {"error": "not found: deliver files with POST /raw/<entity> or /temp/<kind>"})
             user = self._authenticated_user()
             if user is None:
                 return self._reply(401, {"error": "wrong user or password"},
@@ -119,11 +127,16 @@ def make_handler(storage: Storage, users: dict[str, str]) -> type[BaseHTTPReques
             content = self.rfile.read(int(length))
             if not content:
                 return self._reply(400, {"error": "the file is empty"})
-            try:
-                content.decode("utf-8")
-            except UnicodeDecodeError:
-                return self._reply(400, {"error": "the file is not UTF-8"})
-            path = storage.keep(entity, content)
+            if parts[0] == "temp":
+                if not content.startswith(XLSX_SIGNATURE):
+                    return self._reply(400, {"error": "the file is not an Excel (.xlsx)"})
+                path = storage.keep(entity, content, TEMP_FILES, "xlsx")
+            else:
+                try:
+                    content.decode("utf-8")
+                except UnicodeDecodeError:
+                    return self._reply(400, {"error": "the file is not UTF-8"})
+                path = storage.keep(entity, content)
             logger.info("%s delivered %s (%d bytes)", user, path, len(content))
             self._reply(201, {"file": path})
 

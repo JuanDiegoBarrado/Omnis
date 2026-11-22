@@ -21,6 +21,8 @@ _spec.loader.exec_module(storage_server)
 
 USERS = {"jd": "secret", "gym-app": "other"}
 CSV = "fecha,num,ejercicio\n2026-10-01,1,Curl\n".encode()
+# Only the first bytes of a real .xlsx (a zip file): the server checks nothing else
+XLSX = b"PK\x03\x04" + bytes(range(256))
 
 
 class Client:
@@ -203,6 +205,62 @@ def test_rejects_a_file_larger_than_the_limit(client, tmp_path, monkeypatch):
     assert client.deliver("series_gimnasio", CSV + b"x")[0] == 413
     assert files(tmp_path) == {}
     assert client.deliver("series_gimnasio", CSV)[0] == 201
+
+
+def test_keeps_an_excel_in_temp(client, tmp_path, monkeypatch):
+    """
+    Checks: an Excel delivered to /temp/<kind> is kept, byte for byte, as
+    temp/<kind>/<kind>_<YYYYMMDDHHMMSS>.xlsx (a second one in the same second gets _2), and the
+    answer (201) says that path. Nothing goes to raw/.
+
+    If it fails: the gym's Excels couldn't be uploaded, or would land where a raw load reads its
+    CSVs and fail its run.
+    """
+    monkeypatch.setattr(storage_server, "_timestamp", lambda: "20261122120000")
+
+    first = client.request("POST", "/temp/gimnasio", XLSX)
+    second = client.request("POST", "/temp/gimnasio", XLSX + b"2")
+
+    assert first == (201, {"file": "temp/gimnasio/gimnasio_20261122120000.xlsx"})
+    assert second == (201, {"file": "temp/gimnasio/gimnasio_20261122120000_2.xlsx"})
+    assert files(tmp_path) == {
+        "temp/gimnasio/gimnasio_20261122120000.xlsx": XLSX,
+        "temp/gimnasio/gimnasio_20261122120000_2.xlsx": XLSX + b"2",
+    }
+
+
+@pytest.mark.parametrize(
+    "path, body, expected",
+    [
+        pytest.param("/temp/gimnasio", CSV, 400, id="not an excel"),
+        pytest.param("/temp/gimnasio", b"", 400, id="empty"),
+        pytest.param("/temp/Gimnasio", XLSX, 400, id="kind not a plain name"),
+        pytest.param("/temp/..", XLSX, 400, id="kind is a path"),
+        pytest.param("/temp", XLSX, 404, id="no kind"),
+    ],
+)
+def test_rejects_a_wrong_excel_in_temp(client, tmp_path, path, body, expected):
+    """
+    Checks: a file to /temp/<kind> that isn't an .xlsx (a CSV) or is empty, a kind that isn't
+    lowercase letters, digits and _, or no kind at all (the test id says which) is rejected, and
+    nothing is kept.
+
+    If it fails: a file that isn't an Excel would be kept as one, or a request could write outside
+    temp/<kind>/.
+    """
+    assert client.request("POST", path, body)[0] == expected
+    assert files(tmp_path) == {}
+
+
+def test_temp_needs_a_user_and_its_password(client, tmp_path):
+    """
+    Checks: an Excel delivered to /temp/<kind> with a wrong password is answered 401, and nothing is
+    kept.
+
+    If it fails: anyone who can reach the port could fill temp/ with files.
+    """
+    assert client.request("POST", "/temp/gimnasio", XLSX, password="wrong")[0] == 401
+    assert files(tmp_path) == {}
 
 
 def test_answers_its_health_without_credentials(client):
