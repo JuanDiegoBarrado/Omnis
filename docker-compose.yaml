@@ -115,6 +115,9 @@ services:
   # backups/ folder of the service it copies. A failed copy is e-mailed and not retried
   omnis-database-backup:
     build: ./omnis-backup
+    # As AIRFLOW_UID, so the copies belong to the same user as the rest of the files, who can delete
+    # them (a .failed, to retry) without sudo
+    user: "${AIRFLOW_UID:-1000}:0"
     environment:
       # Read by pg_dump and pg_restore
       PGHOST: omnis-database
@@ -138,6 +141,9 @@ services:
 
   omnis-storage-backup:
     build: ./omnis-backup
+    # As AIRFLOW_UID, so the copies belong to the same user as the rest of the files, who can delete
+    # them (a .failed, to retry) without sudo
+    user: "${AIRFLOW_UID:-1000}:0"
     environment:
       # Failure e-mails (omnis-backup/notify_failure.py): off unless all of them but SMTP_PORT are set
       ALERT_EMAIL: ${ALERT_EMAIL:-}

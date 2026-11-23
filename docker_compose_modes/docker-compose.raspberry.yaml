@@ -150,6 +150,9 @@ services:
   # backups/ folder of the service it copies. A failed copy is e-mailed and not retried
   omnis-database-backup:
     build: ./omnis-backup
+    # As AIRFLOW_UID, so the copies belong to the same user as the rest of the files, who can delete
+    # them (a .failed, to retry) without sudo
+    user: "${AIRFLOW_UID:-1000}:0"
     mem_limit: 128m
     logging: *default-logging
     environment:
@@ -175,6 +178,9 @@ services:
 
   omnis-storage-backup:
     build: ./omnis-backup
+    # As AIRFLOW_UID, so the copies belong to the same user as the rest of the files, who can delete
+    # them (a .failed, to retry) without sudo
+    user: "${AIRFLOW_UID:-1000}:0"
     mem_limit: 128m
     logging: *default-logging
     environment:
