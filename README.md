@@ -76,7 +76,8 @@ Edit `.env` (it is gitignored, so your passwords stay on your machine). Every va
 - **`STORAGE_USERS`**: who can deliver files, as `name:password` pairs separated by commas. One user for you is
   enough to start; add one per producer, or share one among several, as you prefer (see
   [Delivering files](#delivering-files)).
-- **`AIRFLOW_UID`**, on Linux only: the output of `id -u`, so the logs Airflow writes belong to you.
+- **`AIRFLOW_UID`**, on Linux only: the output of `id -u`, so everything the stack writes (logs, raw files, backups)
+  belongs to you.
 - **The ports**, if any of the defaults is taken.
 - **The failure alerts** (`ALERT_EMAIL` and `SMTP_*`). They are optional but strongly recommended: `health` pauses
   itself after a failed run until you look at it, and without an e-mail nothing tells you.
